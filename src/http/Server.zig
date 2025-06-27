@@ -76,7 +76,7 @@ pub fn listen(self: *Server) !void {
             &std.mem.toBytes(timeout),
         );
 
-        const read = try readHttpRequest(self.alloc, socket);
+        const read = try readHttpHeaders(self.alloc, socket);
         defer self.alloc.free(read);
         log.info("recieved\n {s}", .{read});
 
@@ -86,7 +86,8 @@ pub fn listen(self: *Server) !void {
     }
 }
 
-fn readHttpRequest(alloc: Allocator, socket: posix.socket_t) ![]u8 {
+/// reads from the socket
+fn readHttpHeaders(alloc: Allocator, socket: posix.socket_t) ![]u8 {
     var buf: [512]u8 = undefined;
     var ret = std.ArrayList(u8).init(alloc);
     while (true) {
@@ -134,5 +135,19 @@ fn writeAll(socket: posix.socket_t, msg: []const u8) !void {
             return error.Closed;
         }
         pos += written;
+    }
+}
+
+fn writeAllVectored(socket: posix.socket_t, vec: []posix.iovec_const) !void {
+    var i: usize = 0;
+    while (true) {
+        var n = try posix.writev(socket, vec[i..]);
+        while (n >= vec[i].len) {
+            n -= vec[i].len;
+            i += 1;
+            if (i >= vec.len) return;
+        }
+        vec[i].base += n;
+        vec[i].len -= n;
     }
 }
