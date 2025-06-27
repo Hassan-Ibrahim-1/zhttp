@@ -4,6 +4,8 @@ const posix = std.posix;
 const log = std.log.scoped(.Server);
 const Allocator = std.mem.Allocator;
 
+const http = @import("http.zig");
+
 const Server = @This();
 
 alloc: Allocator,
@@ -55,30 +57,22 @@ pub fn listen(self: *Server) !void {
             log.err("error accept: {}\n", .{err});
             continue;
         };
-        defer posix.close(socket);
-
+        var client = try http.Client.init(client_address, socket);
+        defer client.deinit();
         log.info("connected to {}", .{client_address});
 
-        const timeout = posix.timeval{ .sec = 2, .usec = 500_000 };
-        // read timeout
-        try posix.setsockopt(
-            socket,
-            posix.SOL.SOCKET,
-            posix.SO.RCVTIMEO,
-            &std.mem.toBytes(timeout),
-        );
+        var reader = try client.reader(self.alloc);
+        defer reader.deinit();
 
-        // write timeout
-        try posix.setsockopt(
-            socket,
-            posix.SOL.SOCKET,
-            posix.SO.SNDTIMEO,
-            &std.mem.toBytes(timeout),
-        );
-
-        const read = try readHttpHeaders(self.alloc, socket);
-        defer self.alloc.free(read);
-        log.info("recieved\n {s}", .{read});
+        const msg = reader.readMessage(self.alloc) catch |err| {
+            log.err(
+                "failed to read message from {}. reason: {}",
+                .{ client.addr, err },
+            );
+            continue;
+        };
+        defer self.alloc.free(msg);
+        log.info("recieved\n{s}", .{msg});
 
         writeAll(socket, response) catch |err| {
             log.err("Failed to write to socket: {}", .{err});
