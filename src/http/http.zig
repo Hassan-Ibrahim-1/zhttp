@@ -56,6 +56,45 @@ pub const Protocol = enum {
     }
 };
 
+/// small wrapper around a path for convenience
+pub const Path = struct {
+    path: []const u8,
+
+    pub fn eql(self: Path, other: []const u8) bool {
+        return std.mem.eql(u8, self.path, other);
+    }
+
+    pub fn exists(self: Path) bool {
+        std.fs.cwd().access(self.path, .{}) catch |err| {
+            switch (err) {
+                error.FileNotFound,
+                error.NameTooLong,
+                error.BadPathName,
+                error.InvalidUtf8,
+                error.InvalidWtf8,
+                => return false,
+                else => return true,
+            }
+        };
+        return true;
+    }
+};
+
+pub const URL = struct {
+    raw: []const u8,
+
+    /// gets the expanded path
+    /// /res/index.html/?key=value would expand to res/index.html
+    /// www.example.com/res/index.html would expand to res/index.html
+    pub fn path(self: URL) ![]const u8 {
+        // relative path
+        if (self.raw[0] == '/') {
+            return self.raw[1..];
+        }
+        // TODO: get path from url
+    }
+};
+
 pub const HttpReader = struct {
     buf: std.ArrayList(u8),
     pos: usize,

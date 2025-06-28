@@ -69,11 +69,13 @@ GOAL:
 TOMORROW:
     -- finish parsing headers
     -- respond to a basic get request, ignore any body
-    read http body in HttpReader using the Content-Length header
-    parse body
+    -- read http body in HttpReader using the Content-Length header
+    -- parse body
     be able to accept post requests from stuff like forms
     write a format function for Request that can reproduce the exact
     request that was sent by the client.
+    a mocking library that can spin up a server and client.
+        use this to test functions that require sockets
     
     get started on responses - should be way easier
     write a format function that constructs a valid http response
