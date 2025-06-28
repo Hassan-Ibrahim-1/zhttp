@@ -104,16 +104,27 @@ fn handleClient(self: *Server, client: *http.Client) !void {
                 res = resource_not_found;
             }
         },
+        .post => {
+            log.info("received a POST request", .{});
+            if (req.headers.get("Content-Type")) |ty| {
+                log.info("Content-Type: {s}", .{ty});
+            }
+            if (req.headers.get("Content-Length")) |ty| {
+                log.info("Content-Length: {s}", .{ty});
+            }
+            log.info("body length: {}", .{req.body.len});
+            log.info("body: {s}", .{req.body});
+        },
         else => log.err(
             "can't handle method: {s}",
             .{req.method.str()},
         ),
     }
 
-    writeAll(client.socket, res) catch |err| {
-        log.err("Failed to write to socket: {}", .{err});
-        return err;
-    };
+    // writeAll(client.socket, res) catch |err| {
+    //     log.err("Failed to write to socket: {}", .{err});
+    //     return err;
+    // };
 }
 
 /// reads from the socket

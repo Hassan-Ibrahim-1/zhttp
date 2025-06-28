@@ -84,33 +84,37 @@ pub const HttpReader = struct {
         }
 
         const buf = self.buf.items[0..self.buf.items.len];
+        _ = buf; // autofix
         while (true) {
             if (try self.bufferedMessage()) |msg| {
                 return alloc.dupe(u8, msg);
             }
-
-            const pos = self.pos;
-
-            const n = try posix.read(self.socket, buf[pos..]);
-            if (n == 0) {
-                if (self.pos == self.buf.items.len) {
-                    try self.ensureSpace(self.buf.capacity * 2);
-                    continue;
-                }
-                return error.Closed;
-            }
-            self.pos = pos + n;
+            try self.readSocket();
         }
+    }
+
+    fn readSocket(self: *HttpReader) !void {
+        const pos = self.pos;
+
+        const n = try posix.read(self.socket, self.buf.items[pos..]);
+        if (n == 0) {
+            if (self.pos == self.buf.items.len) {
+                try self.ensureSpace(self.buf.capacity * 2);
+                return;
+            }
+            return error.Closed;
+        }
+        self.pos = pos + n;
     }
 
     /// if null, there is no body
     fn bodyLen(msg: []const u8) std.fmt.ParseIntError!?usize {
-        const header = "Content-Type: ";
+        const header = "Content-Length: ";
         const index = std.mem.indexOf(u8, msg, header);
         if (index) |i| {
             const start = i + header.len;
-            const end = std.mem.indexOf(u8, msg[start..], "\r\n").?;
-            return std.fmt.parseInt(usize, msg[start], msg[start..end]);
+            const end = std.mem.indexOf(u8, msg[start..], "\r\n").? + start;
+            return try std.fmt.parseInt(usize, msg[start..end], 10);
         }
         return null;
     }
@@ -134,20 +138,28 @@ pub const HttpReader = struct {
         // FIXME: incomplete, should account for an http body
         if (index) |i| {
             self.start += i + 4;
-            return buf[start..self.start];
+            return try self.extractBody(start);
         }
         return null;
     }
 
-    fn extractBody(self: *HttpReader) !void {
-        const buf = 
-        const len = try bodyLen(msg) orelse return;
-        if (len == 0) return;
-        posix.read(self.socket, )
+    fn extractBody(self: *HttpReader, start: usize) ![]u8 {
+        const msg = self.buf.items[start..self.start];
+        const body_len = try bodyLen(msg) orelse return msg;
+        if (body_len == 0) return msg;
+
+        while (true) {
+            if (self.pos - self.start >= body_len) {
+                self.start += body_len;
+                return self.buf.items[start..self.start];
+            }
+            try self.readSocket();
+        }
+        return msg;
     }
 };
 
-test "bufferedMessage multiple messages" {
+test "HttpReader.bufferedMessage multiple messages" {
     const alloc = std.testing.allocator;
     const msg =
         "GET /index.html HTTP/1.1\r\nHost: www.example.com\r\nUser-Agent: Mozilla/5.0\r\nAccept: text/html\r\nConnection: close\r\n\r\n";
@@ -180,7 +192,7 @@ test "bufferedMessage multiple messages" {
     try std.testing.expect(std.mem.eql(u8, m.?, msg2));
 }
 
-test "bufferedMessage no body" {
+test "HttpReader.bufferedMessage no body" {
     const alloc = std.testing.allocator;
     var buf = std.ArrayList(u8).init(alloc);
     defer buf.deinit();
@@ -197,7 +209,7 @@ test "bufferedMessage no body" {
     try std.testing.expect(std.mem.eql(u8, msg, m.?));
 }
 
-test "bufferedMessage garbage bytes" {
+test "HttpReader.bufferedMessage garbage bytes" {
     const alloc = std.testing.allocator;
     var buf = std.ArrayList(u8).init(alloc);
     defer buf.deinit();
@@ -212,6 +224,13 @@ test "bufferedMessage garbage bytes" {
     };
     const m = try reader.bufferedMessage();
     try std.testing.expect(std.mem.eql(u8, msg, m.?));
+}
+
+test "HttpReader.bodyLen" {
+    const msg =
+        "POST /submit HTTP/1.1\r\nHost: example.com\r\nContent-Type: text/html\r\nContent-Length: 64\r\n\r\n<html><body><h1>Hello, world!</h1><p>This is a test.</p></body></html>";
+    const len = try HttpReader.bodyLen(msg);
+    try std.testing.expect(len.? == 64);
 }
 
 test "method str" {
