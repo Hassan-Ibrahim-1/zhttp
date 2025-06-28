@@ -78,6 +78,8 @@ fn handleClient(self: *Server, client: *http.Client) !void {
     defer self.alloc.free(msg);
     log.info("recieved\n{s}", .{msg});
 
+    _ = try parseRequest(self.arena.allocator(), msg);
+
     writeAll(client.socket, response) catch |err| {
         log.err("Failed to write to socket: {}", .{err});
         return err;
@@ -177,12 +179,21 @@ fn parseRequest(alloc: Allocator, req: []const u8) ParseError!http.Request {
         try headers.put(kv.key, kv.value);
     }
 
+    if (lines.next()) |body| {
+        if (body.len != 0) {
+            log.warn(
+                "found a body but can't do anything with it yet\nbody:{s}",
+                .{body},
+            );
+        }
+    }
+
     return http.Request{
         .method = req_line.method,
         .url = req_line.url,
         .protocol = req_line.protocol,
         .arena = alloc,
-        .body = "",
+        .body = lines.next() orelse "",
         .headers = headers,
     };
 }
@@ -273,6 +284,8 @@ test parseRequest {
             return err;
         };
     }
+
+    try std.testing.expect(req.body.len == 0);
 }
 
 test parseRequestLine {
