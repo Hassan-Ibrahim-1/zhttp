@@ -6,6 +6,55 @@ const log = std.log.scoped(.http);
 
 pub const Server = @import("Server.zig");
 pub const Client = @import("Client.zig");
+pub const Request = @import("Request.zig");
+
+pub const Method = enum {
+    get,
+    head,
+    post,
+    put,
+    patch,
+    delete,
+    options,
+    connect,
+
+    const m = std.StaticStringMap(Method).initComptime(&.{
+        .{ "GET", .get },
+        .{ "HEAD", .head },
+        .{ "POST", .post },
+        .{ "PUT", .put },
+        .{ "PATCH", .patch },
+        .{ "DELETE", .delete },
+        .{ "OPTIONS", .options },
+        .{ "CONNECT", .connect },
+    });
+
+    pub fn str(self: Method) []const u8 {
+        const i = std.mem.indexOfScalar(Method, m.values(), self).?;
+        return m.keys()[i];
+    }
+
+    pub fn from(s: []const u8) ?Method {
+        return m.get(s);
+    }
+};
+
+pub const Protocol = enum {
+    http11,
+
+    const m = std.StaticStringMap(Protocol).initComptime(&.{
+        .{ "HTTP/1.1", .http11 },
+    });
+
+    pub fn str(self: Protocol) []const u8 {
+        const i = std.mem.indexOfScalar(Protocol, m.values(), self).?;
+        return m.keys()[i];
+    }
+
+    pub fn from(s: []const u8) ?Protocol {
+        return m.get(s);
+    }
+};
 
 pub const HttpReader = struct {
     buf: std.ArrayList(u8),
@@ -146,4 +195,20 @@ test "bufferedMessage garbage bytes" {
     };
     const m = try reader.bufferedMessage();
     try std.testing.expect(std.mem.eql(u8, msg, m.?));
+}
+
+test "method str" {
+    try std.testing.expect(std.mem.eql(u8, Method.get.str(), "GET"));
+}
+
+test "method from" {
+    try std.testing.expect(Method.from("GET") == .get);
+}
+
+test "protocol str" {
+    try std.testing.expect(std.mem.eql(u8, Protocol.http11.str(), "HTTP/1.1"));
+}
+
+test "protocol from" {
+    try std.testing.expect(Protocol.from("HTTP/1.1") == .http11);
 }

@@ -29,6 +29,8 @@ Be able to parse GET and POST requests
     - Parse the body using Content-Length
     try writeAll(socket, msg);
     - Figure out how to read from the socket
+    write a format function for Request that can reproduce the exact
+    request that was sent by the client.
 
 http uses \r\n as a delimiter for headers and a Content-Length header prefix for the body
 create a reader struct that reads a full http message and returns it

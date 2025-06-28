@@ -42,8 +42,6 @@ pub fn listen(self: *Server) !void {
     );
     try posix.listen(listener, 128);
 
-    const response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: 48\r\nConnection: close\r\n\r\n<html><body><h1>Hello, world!</h1></body></html>";
-
     // var buf: [512]u8 = undefined;
     while (true) {
         var client_address: net.Address = undefined;
@@ -58,26 +56,32 @@ pub fn listen(self: *Server) !void {
             continue;
         };
         var client = try http.Client.init(client_address, socket);
-        defer client.deinit();
-        log.info("connected to {}", .{client_address});
-
-        var reader = try client.reader(self.alloc);
-        defer reader.deinit();
-
-        const msg = reader.readMessage(self.alloc) catch |err| {
-            log.err(
-                "failed to read message from {}. reason: {}",
-                .{ client.addr, err },
-            );
-            continue;
-        };
-        defer self.alloc.free(msg);
-        log.info("recieved\n{s}", .{msg});
-
-        writeAll(socket, response) catch |err| {
-            log.err("Failed to write to socket: {}", .{err});
-        };
+        self.handleClient(&client) catch continue;
     }
+}
+
+const response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: 48\r\nConnection: close\r\n\r\n<html><body><h1>Hello, world!</h1></body></html>";
+fn handleClient(self: *Server, client: *http.Client) !void {
+    defer client.deinit();
+    log.info("connected to {}", .{client.addr});
+
+    var reader = try client.reader(self.alloc);
+    defer reader.deinit();
+
+    const msg = reader.readMessage(self.alloc) catch |err| {
+        log.err(
+            "failed to read message from {}. reason: {}",
+            .{ client.addr, err },
+        );
+        return err;
+    };
+    defer self.alloc.free(msg);
+    log.info("recieved\n{s}", .{msg});
+
+    writeAll(client.socket, response) catch |err| {
+        log.err("Failed to write to socket: {}", .{err});
+        return err;
+    };
 }
 
 /// reads from the socket
@@ -144,4 +148,69 @@ fn writeAllVectored(socket: posix.socket_t, vec: []posix.iovec_const) !void {
         vec[i].base += n;
         vec[i].len -= n;
     }
+}
+
+const ParseError = error{
+    InvalidHttpRequest,
+    InvalidRequestLine,
+    InvalidHeaders,
+    InvalidBody,
+} || Allocator.Error;
+
+fn parseRequest(alloc: Allocator, req: []const u8) ParseError!http.Request {
+    if (!std.mem.containsAtLeast(u8, req, 2, "\r\n")) {
+        return error.InvalidHttpRequest;
+    }
+    var lines = std.mem.splitSequence(u8, req, "\r\n");
+
+    const req_line = try parseRequestLine(alloc, lines.next().?);
+    // std.debug.print("{any}\n", .{req_line});
+    return http.Request{
+        .method = req_line.method,
+        .url = req_line.url,
+        .protocol = req_line.protocol,
+        .arena = alloc,
+        .body = "",
+        .headers = .init(alloc),
+    };
+}
+
+fn parseRequestLine(
+    alloc: Allocator,
+    req_line: []const u8,
+) ParseError!struct {
+    method: http.Method,
+    url: []u8,
+    protocol: http.Protocol,
+} {
+    if (!std.mem.containsAtLeast(u8, req_line, 2, " ")) {
+        return error.InvalidRequestLine;
+    }
+    var els = std.mem.splitScalar(u8, req_line, ' ');
+
+    const method = http.Method.from(els.next().?) orelse
+        return error.InvalidRequestLine;
+    const url = try alloc.dupe(u8, els.next().?);
+    const protocol = http.Protocol.from(els.next().?) orelse
+        return error.InvalidRequestLine;
+
+    return .{
+        .method = method,
+        .url = url,
+        .protocol = protocol,
+    };
+}
+
+test "parseRequest" {
+    const reqstr = "POST /static/image.png HTTP/1.1\r\nHost: www.example.com\r\nUser-Agent: Mozilla/5.0\r\nAccept: text/html\r\nConnection: close\r\n\r\n";
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const req = try parseRequest(alloc, reqstr);
+
+    try std.testing.expect(req.method == .post);
+    try std.testing.expect(req.protocol == .http11);
+    try std.testing.expect(std.mem.eql(u8, req.url, "/static/image.png"));
 }
