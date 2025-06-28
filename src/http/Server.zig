@@ -60,7 +60,8 @@ pub fn listen(self: *Server) !void {
     }
 }
 
-const response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: 48\r\nConnection: close\r\n\r\n<html><body><h1>Hello, world!</h1></body></html>";
+const response_fmt = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{s}";
+const resource_not_found = "HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n";
 fn handleClient(self: *Server, client: *http.Client) !void {
     defer client.deinit();
     log.info("connected to {}", .{client.addr});
@@ -76,11 +77,40 @@ fn handleClient(self: *Server, client: *http.Client) !void {
         return err;
     };
     defer self.alloc.free(msg);
-    log.info("recieved\n{s}", .{msg});
+    // log.info("recieved\n{s}", .{msg});
 
-    _ = try parseRequest(self.arena.allocator(), msg);
+    const alloc = self.arena.allocator();
+    const req = try parseRequest(alloc, msg);
 
-    writeAll(client.socket, response) catch |err| {
+    var res: []const u8 = undefined;
+
+    switch (req.method) {
+        .get => {
+            if (std.mem.eql(u8, req.url, "/")) {
+                const f = try std.fs.cwd().readFileAlloc(
+                    alloc,
+                    "index.html",
+                    std.math.maxInt(u32),
+                );
+                res = try std.fmt.allocPrint(alloc, response_fmt, .{ f.len, f });
+            } else if (std.mem.eql(u8, req.url, "/index.html")) {
+                const f = try std.fs.cwd().readFileAlloc(
+                    alloc,
+                    "index.html",
+                    std.math.maxInt(u32),
+                );
+                res = try std.fmt.allocPrint(alloc, response_fmt, .{ f.len, f });
+            } else {
+                res = resource_not_found;
+            }
+        },
+        else => log.err(
+            "can't handle method: {s}",
+            .{req.method.str()},
+        ),
+    }
+
+    writeAll(client.socket, res) catch |err| {
         log.err("Failed to write to socket: {}", .{err});
         return err;
     };
@@ -177,15 +207,6 @@ fn parseRequest(alloc: Allocator, req: []const u8) ParseError!http.Request {
         if (header.len == 0) break;
         const kv = try parseHeader(alloc, header);
         try headers.put(kv.key, kv.value);
-    }
-
-    if (lines.next()) |body| {
-        if (body.len != 0) {
-            log.warn(
-                "found a body but can't do anything with it yet\nbody:{s}",
-                .{body},
-            );
-        }
     }
 
     return http.Request{

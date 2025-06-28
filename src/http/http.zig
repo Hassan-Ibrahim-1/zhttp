@@ -91,9 +91,7 @@ pub const HttpReader = struct {
 
             const pos = self.pos;
 
-            log.info("buf len: {}", .{self.buf.items.len});
             const n = try posix.read(self.socket, buf[pos..]);
-            log.info("pos: {}", .{pos});
             if (n == 0) {
                 if (self.pos == self.buf.items.len) {
                     try self.ensureSpace(self.buf.capacity * 2);
