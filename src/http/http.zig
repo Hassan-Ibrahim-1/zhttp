@@ -80,13 +80,13 @@ pub const Path = struct {
     }
 };
 
-pub const URL = struct {
+pub const Url = struct {
     raw: []const u8,
 
     /// gets the expanded path
     /// /res/index.html/?key=value would expand to res/index.html
     /// www.example.com/res/index.html would expand to res/index.html
-    pub fn path(self: URL) ![]const u8 {
+    pub fn path(self: Url) ![]const u8 {
         // relative path
         if (self.raw[0] == '/') {
             return self.raw[1..];
