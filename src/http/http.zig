@@ -16,13 +16,9 @@ pub const HttpReader = struct {
     pub fn init(
         alloc: Allocator,
         socket: posix.socket_t,
-    ) Allocator.Error!HttpReader {
-        var buf = std.ArrayList(u8).init(alloc);
-        const initial_capacity = 512;
-        try buf.ensureTotalCapacity(initial_capacity);
-        buf.appendSliceAssumeCapacity("\x00" ** initial_capacity);
+    ) HttpReader {
         return HttpReader{
-            .buf = buf,
+            .buf = .init(alloc),
             .pos = 0,
             .start = 0,
             .socket = socket,
@@ -34,6 +30,10 @@ pub const HttpReader = struct {
     }
 
     pub fn readMessage(self: *HttpReader, alloc: Allocator) ![]u8 {
+        if (self.buf.items.len == 0) {
+            try self.ensureSpace(512);
+        }
+
         const buf = self.buf.items[0..self.buf.items.len];
         while (true) {
             if (try self.bufferedMessage()) |msg| {
@@ -46,10 +46,22 @@ pub const HttpReader = struct {
             const n = try posix.read(self.socket, buf[pos..]);
             log.info("pos: {}", .{pos});
             if (n == 0) {
+                if (self.pos == self.buf.items.len) {
+                    try self.ensureSpace(self.buf.capacity * 2);
+                    continue;
+                }
                 return error.Closed;
             }
             self.pos = pos + n;
         }
+    }
+
+    fn ensureSpace(self: *HttpReader, cap: usize) !void {
+        if (cap <= self.buf.capacity) return;
+
+        const new = cap - self.buf.items.len;
+        try self.buf.ensureTotalCapacity(cap);
+        self.buf.appendNTimesAssumeCapacity(0, new);
     }
 
     fn bufferedMessage(self: *HttpReader) !?[]u8 {
@@ -62,21 +74,52 @@ pub const HttpReader = struct {
         const index = std.mem.indexOf(u8, unprocessed, "\r\n\r\n");
         // FIXME: incomplete, should account for an http body
         if (index) |i| {
-            const len = (i - self.start) + 4;
-            self.start += len;
-            return buf[start .. i + 4];
+            self.start += i + 4;
+            return buf[start..self.start];
         }
         return null;
     }
 };
 
+test "bufferedMessage multiple messages" {
+    const alloc = std.testing.allocator;
+    const msg =
+        "GET /index.html HTTP/1.1\r\nHost: www.example.com\r\nUser-Agent: Mozilla/5.0\r\nAccept: text/html\r\nConnection: close\r\n\r\n";
+    var reader = HttpReader{
+        .pos = msg.len,
+        .start = 0,
+        .socket = undefined,
+        .buf = .init(alloc),
+    };
+    var buf = &reader.buf;
+    defer buf.deinit();
+
+    try buf.appendSlice(msg);
+
+    var m = try reader.bufferedMessage();
+    try std.testing.expect(std.mem.eql(u8, msg, m.?));
+
+    const msg2 =
+        "GET /google.html HTTP/1.1\r\nHost: www.google.com\r\nUser-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)\r\nAccept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\nAccept-Language: en-US,en;q=0.5\r\nConnection: keep-alive\r\n\r\n";
+    const initial_slice = 10;
+    try buf.appendSlice(msg2[0..initial_slice]);
+    reader.pos = buf.items.len;
+    m = try reader.bufferedMessage();
+    try std.testing.expect(m == null);
+
+    try buf.appendSlice(msg2[initial_slice..]);
+    reader.pos = buf.items.len;
+    m = try reader.bufferedMessage();
+
+    try std.testing.expect(std.mem.eql(u8, m.?, msg2));
+}
+
 test "bufferedMessage no body" {
     const alloc = std.testing.allocator;
     var buf = std.ArrayList(u8).init(alloc);
     defer buf.deinit();
-    // not using a multiline string literal because it doesn't support escape sequences
     const msg =
-        "GET /index.html HTTP/1.1\r\n" ++ "Host: www.example.com\r\n" ++ "User-Agent: Mozilla/5.0\r\n" ++ "Accept: text/html\r\n" ++ "Connection: close\r\n" ++ "\r\n";
+        "GET /index.html HTTP/1.1\r\nHost: www.example.com\r\nUser-Agent: Mozilla/5.0\r\nAccept: text/html\r\nConnection: close\r\n\r\n";
     try buf.appendSlice(msg);
     var reader = HttpReader{
         .pos = msg.len,
@@ -92,9 +135,8 @@ test "bufferedMessage garbage bytes" {
     const alloc = std.testing.allocator;
     var buf = std.ArrayList(u8).init(alloc);
     defer buf.deinit();
-    // not using a multiline string literal because it doesn't support escape sequences
     const msg =
-        "GET /index.html HTTP/1.1\r\n" ++ "Host: www.example.com\r\n" ++ "User-Agent: Mozilla/5.0\r\n" ++ "Accept: text/html\r\n" ++ "Connection: close\r\n" ++ "\r\n";
+        "GET /index.html HTTP/1.1\r\nHost: www.example.com\r\nUser-Agent: Mozilla/5.0\r\nAccept: text/html\r\nConnection: close\r\n\r\n";
     try buf.appendSlice(msg ++ "jfdlsnvxnvxcvkjsdfkldjs");
     var reader = HttpReader{
         .pos = msg.len,

@@ -30,8 +30,7 @@ Be able to parse GET and POST requests
     try writeAll(socket, msg);
     - Figure out how to read from the socket
 
-http uses \r\n as a delimiter for headers and a Content-Length header
-prefix for the body
+http uses \r\n as a delimiter for headers and a Content-Length header prefix for the body
 create a reader struct that reads a full http message and returns it
 wrapped in a request struct. it should keep the rest of the message in a buffer
 
