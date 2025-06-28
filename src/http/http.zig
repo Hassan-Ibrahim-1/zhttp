@@ -103,6 +103,18 @@ pub const HttpReader = struct {
         }
     }
 
+    /// if null, there is no body
+    fn bodyLen(msg: []const u8) std.fmt.ParseIntError!?usize {
+        const header = "Content-Type: ";
+        const index = std.mem.indexOf(u8, msg, header);
+        if (index) |i| {
+            const start = i + header.len;
+            const end = std.mem.indexOf(u8, msg[start..], "\r\n").?;
+            return std.fmt.parseInt(usize, msg[start], msg[start..end]);
+        }
+        return null;
+    }
+
     fn ensureSpace(self: *HttpReader, cap: usize) !void {
         if (cap <= self.buf.capacity) return;
 
@@ -125,6 +137,13 @@ pub const HttpReader = struct {
             return buf[start..self.start];
         }
         return null;
+    }
+
+    fn extractBody(self: *HttpReader) !void {
+        const buf = 
+        const len = try bodyLen(msg) orelse return;
+        if (len == 0) return;
+        posix.read(self.socket, )
     }
 };
 

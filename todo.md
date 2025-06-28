@@ -14,6 +14,7 @@ http chunking
 http2
 caching
 cookies
+rss reader
 
 Next up:
     write a server that can send over the contents of a requested file
@@ -34,9 +35,40 @@ http uses \r\n as a delimiter for headers and a Content-Length header prefix for
 create a reader struct that reads a full http message and returns it
 wrapped in a request struct. it should keep the rest of the message in a buffer
 
+GOAL:
+    be able to create a blog website where i can add markdown
+    files in a directory and the server will construct handlers based on that
+    things i want
+        - creating a file server in a specific directory
+            maybe have it be configurable so it only sends certain types of files
+            or only send non-hidden files, or restrict certain files specifically
+        - live reloading
+            edit the md file and have the changes appear on the website automatically
+            without have to reload the web page manually
+            same for handlers, if a new file is created make a new handler for it
+        - be able to style the document without having to write css
+        - some basic interactivity like links, buttons that act as links etc
+        - be able to add a top bar that has some links and some personalized text
+            look at other blogs for inspiration
+            https://neilonsoftware.com/blog/
+            https://lethain.com/
+            https://benhoyt.com/writings/how-to-apply/
+        - a home page with some basic info
+        - being able to include code snippets with syntax highlighting
+            a neovim plugin for this would be cool as well
+            in an md code snippet maybe that code could have its own syntax highlighting (in editor)
+        - an articles page with a list of articles that can have custom styling
+            being able to have optional descriptions of articles
+        - being able to comment on an article and interacting with comments (likes, replies)
+        - maybe add an audio feature so that some blogs can optionally be podcasts
+        - make it secure (figure out what this means)
+        - RSS
+        - be able to override css
+        - changing font
+
 TOMORROW:
-    finish parsing headers
-    respond to a basic get request, ignore any body
+    -- finish parsing headers
+    -- respond to a basic get request, ignore any body
     read http body in HttpReader using the Content-Length header
     parse body
     be able to accept post requests from stuff like forms
