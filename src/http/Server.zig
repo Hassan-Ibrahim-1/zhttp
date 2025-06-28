@@ -167,14 +167,23 @@ fn parseRequest(alloc: Allocator, req: []const u8) ParseError!http.Request {
     var lines = std.mem.splitSequence(u8, req, "\r\n");
 
     const req_line = try parseRequestLine(alloc, lines.next().?);
-    // std.debug.print("{any}\n", .{req_line});
+
+    var headers = std.StringHashMap([]const u8).init(alloc);
+
+    while (lines.next()) |header| {
+        // \r\n\r\n pattern found
+        if (header.len == 0) break;
+        const kv = try parseHeader(alloc, header);
+        try headers.put(kv.key, kv.value);
+    }
+
     return http.Request{
         .method = req_line.method,
         .url = req_line.url,
         .protocol = req_line.protocol,
         .arena = alloc,
         .body = "",
-        .headers = .init(alloc),
+        .headers = headers,
     };
 }
 
@@ -213,6 +222,7 @@ fn parseHeader(
         return error.InvalidHeader;
     }
     var s = std.mem.splitSequence(u8, header, ": ");
+    // FIXME: make sure the header is syntactially valid
     const key = try alloc.dupe(u8, s.next().?);
     const value = try alloc.dupe(u8, s.next().?);
     return .{
@@ -222,6 +232,17 @@ fn parseHeader(
 }
 
 test parseRequest {
+    // GET /static/image.png HTTP/1.1
+    // Host: www.example.com
+    // User-Agent: Mozilla/5.0
+    // Accept: text/html
+    // Connection: close
+    const expected_headers = comptime std.StaticStringMap([]const u8).initComptime(&.{
+        .{ "Host", "www.example.com" },
+        .{ "User-Agent", "Mozilla/5.0" },
+        .{ "Accept", "text/html" },
+        .{ "Connection", "close" },
+    });
     const reqstr = "GET /static/image.png HTTP/1.1\r\nHost: www.example.com\r\nUser-Agent: Mozilla/5.0\r\nAccept: text/html\r\nConnection: close\r\n\r\n";
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -233,6 +254,25 @@ test parseRequest {
     try std.testing.expect(req.method == .get);
     try std.testing.expect(req.protocol == .http11);
     try std.testing.expect(std.mem.eql(u8, req.url, "/static/image.png"));
+
+    const headers = &req.headers;
+    try std.testing.expect(expected_headers.keys().len == headers.count());
+
+    for (0..expected_headers.keys().len) |i| {
+        const expected_key = expected_headers.keys()[i];
+        const expected_value = expected_headers.values()[i];
+
+        const actual = headers.get(expected_key).?;
+        std.testing.expect(
+            std.mem.eql(u8, actual, expected_value),
+        ) catch |err| {
+            std.debug.print(
+                "[{s}] expected={s}, got={s}\n",
+                .{ expected_key, expected_value, actual },
+            );
+            return err;
+        };
+    }
 }
 
 test parseRequestLine {
