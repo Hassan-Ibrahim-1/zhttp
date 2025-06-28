@@ -153,6 +153,9 @@ fn writeAllVectored(socket: posix.socket_t, vec: []posix.iovec_const) !void {
 const ParseError = error{
     InvalidHttpRequest,
     InvalidRequestLine,
+    InvalidMethod,
+    InvalidUrl,
+    InvalidProtocol,
     InvalidHeaders,
     InvalidBody,
 } || Allocator.Error;
@@ -189,10 +192,11 @@ fn parseRequestLine(
     var els = std.mem.splitScalar(u8, req_line, ' ');
 
     const method = http.Method.from(els.next().?) orelse
-        return error.InvalidRequestLine;
+        return error.InvalidMethod;
+    // FIXME: do basic checks on this url. mak sure it is syntactically valid
     const url = try alloc.dupe(u8, els.next().?);
     const protocol = http.Protocol.from(els.next().?) orelse
-        return error.InvalidRequestLine;
+        return error.InvalidProtocol;
 
     return .{
         .method = method,
@@ -201,8 +205,8 @@ fn parseRequestLine(
     };
 }
 
-test "parseRequest" {
-    const reqstr = "POST /static/image.png HTTP/1.1\r\nHost: www.example.com\r\nUser-Agent: Mozilla/5.0\r\nAccept: text/html\r\nConnection: close\r\n\r\n";
+test parseRequest {
+    const reqstr = "GET /static/image.png HTTP/1.1\r\nHost: www.example.com\r\nUser-Agent: Mozilla/5.0\r\nAccept: text/html\r\nConnection: close\r\n\r\n";
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -210,7 +214,27 @@ test "parseRequest" {
 
     const req = try parseRequest(alloc, reqstr);
 
-    try std.testing.expect(req.method == .post);
+    try std.testing.expect(req.method == .get);
     try std.testing.expect(req.protocol == .http11);
     try std.testing.expect(std.mem.eql(u8, req.url, "/static/image.png"));
+}
+
+test parseRequestLine {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const rl = try parseRequestLine(alloc, "GET /index.html HTTP/1.1");
+    try std.testing.expect(rl.method == .get);
+    try std.testing.expect(rl.protocol == .http11);
+    try std.testing.expect(std.mem.eql(u8, rl.url, "/index.html"));
+
+    var rle = parseRequestLine(alloc, "BADMETHOD /test.html HTTP/1.1");
+    try std.testing.expectError(error.InvalidMethod, rle);
+
+    rle = parseRequestLine(alloc, "GET /test.html HTTP/2");
+    try std.testing.expectError(error.InvalidProtocol, rle);
+
+    rle = parseRequestLine(alloc, "GET/test.html HTTP/1.1");
+    try std.testing.expectError(error.InvalidRequestLine, rle);
 }
