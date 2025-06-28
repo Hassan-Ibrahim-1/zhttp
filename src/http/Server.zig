@@ -156,7 +156,7 @@ const ParseError = error{
     InvalidMethod,
     InvalidUrl,
     InvalidProtocol,
-    InvalidHeaders,
+    InvalidHeader,
     InvalidBody,
 } || Allocator.Error;
 
@@ -193,7 +193,7 @@ fn parseRequestLine(
 
     const method = http.Method.from(els.next().?) orelse
         return error.InvalidMethod;
-    // FIXME: do basic checks on this url. mak sure it is syntactically valid
+    // FIXME: do basic checks on this url. make sure it is syntactically valid
     const url = try alloc.dupe(u8, els.next().?);
     const protocol = http.Protocol.from(els.next().?) orelse
         return error.InvalidProtocol;
@@ -202,6 +202,22 @@ fn parseRequestLine(
         .method = method,
         .url = url,
         .protocol = protocol,
+    };
+}
+
+fn parseHeader(
+    alloc: Allocator,
+    header: []const u8,
+) ParseError!struct { key: []u8, value: []u8 } {
+    if (!std.mem.containsAtLeast(u8, header, 1, ": ")) {
+        return error.InvalidHeader;
+    }
+    var s = std.mem.splitSequence(u8, header, ": ");
+    const key = try alloc.dupe(u8, s.next().?);
+    const value = try alloc.dupe(u8, s.next().?);
+    return .{
+        .key = key,
+        .value = value,
     };
 }
 
@@ -237,4 +253,17 @@ test parseRequestLine {
 
     rle = parseRequestLine(alloc, "GET/test.html HTTP/1.1");
     try std.testing.expectError(error.InvalidRequestLine, rle);
+}
+
+test parseHeader {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const header = try parseHeader(alloc, "Content-Length: 128");
+    try std.testing.expect(std.mem.eql(u8, header.key, "Content-Length"));
+    try std.testing.expect(std.mem.eql(u8, header.value, "128"));
+
+    const err = parseHeader(alloc, "Host:www.example.com");
+    try std.testing.expectError(error.InvalidHeader, err);
 }
