@@ -4,6 +4,7 @@ const Allocator = std.mem.Allocator;
 
 pub const Client = @import("Client.zig");
 pub const Request = @import("Request.zig");
+pub const Response = @import("Response.zig");
 pub const Server = @import("Server.zig");
 pub const parser = @import("parser.zig");
 

@@ -84,56 +84,16 @@ fn handleClient(self: *Server, client: *http.Client) !void {
     // log.info("recieved\n{s}", .{msg});
 
     const alloc = self.arena.allocator();
+    _ = alloc; // autofix
     const req = try http.parser.parseRequest(self, msg);
+    _ = req; // autofix
 
-    var res: []const u8 = undefined;
+    // var res: http.Response = undefined;
 
-    switch (req.method) {
-        .get => {
-            const p = try std.mem.concat(alloc, u8, &.{ "res", req.url.path().path });
-            const path = http.Path{ .path = p };
-            if (path.exists() and try path.kind() == .file) {
-                const f = try std.fs.cwd().readFileAlloc(
-                    alloc,
-                    path.path,
-                    std.math.maxInt(u32),
-                );
-                res = try std.fmt.allocPrint(alloc, response_fmt, .{ f.len, f });
-            } else if (path.eql("res/")) {
-                const f = try std.fs.cwd().readFileAlloc(
-                    alloc,
-                    "res/index.html",
-                    std.math.maxInt(u32),
-                );
-                res = try std.fmt.allocPrint(alloc, response_fmt, .{ f.len, f });
-            } else {
-                log.info("{s} not found", .{path.path});
-                res = resource_not_found;
-            }
-        },
-        .post => {
-            log.info("received a POST request", .{});
-            if (req.headers.get("Content-Type")) |ty| {
-                log.info("Content-Type: {s}", .{ty});
-            }
-            if (req.headers.get("Content-Length")) |ty| {
-                log.info("Content-Length: {s}", .{ty});
-            }
-            log.info("body length: {}", .{req.body.len});
-            log.info("body: {s}", .{req.body});
-            const html = "<p>BEBE!</p>";
-            res = try std.fmt.allocPrint(alloc, response_fmt, .{ html.len, html });
-        },
-        else => log.err(
-            "can't handle method: {s}",
-            .{req.method.str()},
-        ),
-    }
-
-    writeAll(client.socket, res) catch |err| {
-        log.err("Failed to write to socket: {}", .{err});
-        return err;
-    };
+    // writeAll(client.socket, res) catch |err| {
+    //     log.err("Failed to write to socket: {}", .{err});
+    //     return err;
+    // };
 }
 
 /// reads from the socket
