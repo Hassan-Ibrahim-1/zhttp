@@ -80,18 +80,86 @@ pub const Path = struct {
     }
 };
 
-pub const URL = struct {
+pub const Url = struct {
+    /// this must always be an absolute url
     raw: []const u8,
 
-    /// gets the expanded path
-    /// /res/index.html/?key=value would expand to res/index.html
-    /// www.example.com/res/index.html would expand to res/index.html
-    pub fn path(self: URL) ![]const u8 {
-        // relative path
-        if (self.raw[0] == '/') {
-            return self.raw[1..];
+    /// hst must not contain an ending /
+    /// relative must start with a /
+    pub fn fromRelative(
+        alloc: Allocator,
+        relative: []const u8,
+        protocol: Protocol,
+        hst: []const u8,
+        prt: ?u16,
+    ) !Url {
+        // TODO: support queries in fromRelative
+        const scheme = switch (protocol) {
+            .http11 => "http",
+        };
+
+        // u16 can have at most 5 digits
+        const port_str: ?[]const u8 = str: {
+            if (prt) |p| {
+                var buf: [5]u8 = undefined;
+                break :str try std.fmt.bufPrint(&buf, "{}", .{p});
+            }
+            break :str null;
+        };
+        const raw = try std.mem.concat(alloc, u8, &.{
+            scheme,
+            "://",
+            hst,
+            if (prt != null) ":" else "",
+            port_str orelse "",
+            relative,
+        });
+        return .init(raw);
+    }
+
+    pub fn init(raw: []const u8) Url {
+        // TODO: create a hashmap of queries
+        return .{ .raw = raw };
+    }
+
+    pub fn host(self: Url) []const u8 {
+        // remove scheme
+        var it = std.mem.splitSequence(u8, self.raw, "://");
+        _ = it.next().?;
+        const s1 = it.next().?;
+
+        // port exists
+        if (std.mem.indexOf(u8, s1, ":")) |i| {
+            return s1[0..i];
         }
-        // TODO: get path from url
+        return s1[0..std.mem.indexOf(u8, s1, "/").?];
+    }
+
+    pub fn port(self: Url) std.fmt.ParseIntError!?u16 {
+        // remove scheme
+        var it = std.mem.splitSequence(u8, self.raw, "://");
+        _ = it.next().?;
+        const s1 = it.next().?;
+
+        // port exists
+        if (std.mem.indexOf(u8, s1, ":")) |i| {
+            const end = std.mem.indexOf(u8, s1, "/").?;
+            return try std.fmt.parseInt(u16, s1[i + 1 .. end], 10);
+        }
+        return null;
+    }
+
+    pub fn path(self: Url) Path {
+        // remove scheme
+        var it = std.mem.splitSequence(u8, self.raw, "://");
+        _ = it.next().?;
+        const s1 = it.next().?;
+
+        const i = std.mem.indexOf(u8, s1, "/").? + 1;
+        if (std.mem.indexOf(u8, s1, "?")) |end| {
+            return Path{ .path = s1[i..end] };
+        }
+        return Path{ .path = s1[i..] };
     }
 };
 
@@ -286,4 +354,144 @@ test "protocol str" {
 
 test "protocol from" {
     try std.testing.expect(Protocol.from("HTTP/1.1") == .http11);
+}
+
+test Url {
+    const Test = struct {
+        raw: []const u8,
+        host: []const u8,
+        port: ?u16,
+        path: []const u8,
+    };
+    const tests = [_]Test{
+        .{
+            .raw = "http://example.com/search",
+            .host = "example.com",
+            .port = null,
+            .path = "search",
+        },
+        .{
+            .raw = "http://example.com/search?q=books",
+            .host = "example.com",
+            .port = null,
+            .path = "search",
+        },
+        .{
+            .raw = "http://example.com:8080/search",
+            .host = "example.com",
+            .port = 8080,
+            .path = "search",
+        },
+        .{
+            .raw = "http://example.com:8080/search?q=books",
+            .host = "example.com",
+            .port = 8080,
+            .path = "search",
+        },
+        .{
+            .raw = "http://example.com/api/user",
+            .host = "example.com",
+            .port = null,
+            .path = "api/user",
+        },
+        .{
+            .raw = "http://example.com/api/user?id=5",
+            .host = "example.com",
+            .port = null,
+            .path = "api/user",
+        },
+        .{
+            .raw = "http://example.com:3000/api/user",
+            .host = "example.com",
+            .port = 3000,
+            .path = "api/user",
+        },
+        .{
+            .raw = "http://example.com:3000/api/user?id=5",
+            .host = "example.com",
+            .port = 3000,
+            .path = "api/user",
+        },
+    };
+    for (&tests, 0..) |*t, i| {
+        const url = Url{ .raw = t.raw };
+        errdefer {
+            std.debug.print("Failed test {}\n", .{i});
+            std.debug.print("[path] got={s} expected={s}\n", .{ url.path().path, t.path });
+            std.debug.print("[host] got={s} expected={s}\n", .{ url.host(), t.host });
+            std.debug.print("[port] got={!?} expected={?}\n", .{ url.port(), t.port });
+        }
+
+        try std.testing.expect(url.path().eql(t.path));
+        try std.testing.expect(std.mem.eql(u8, url.host(), t.host));
+        try std.testing.expect(try url.port() == t.port);
+    }
+}
+
+test "Url.fromRelative" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const alloc = arena.allocator();
+    const Test = struct {
+        expected: []const u8,
+        relative: []const u8,
+        host: []const u8,
+        protocol: Protocol = .http11,
+        port: ?u16,
+    };
+    const tests = [_]Test{
+        .{
+            .expected = "http://example.com/search",
+            .host = "example.com",
+            .port = null,
+            .relative = "/search",
+        },
+        .{
+            .expected = "http://example.com/search",
+            .host = "example.com",
+            .port = null,
+            .relative = "/search",
+        },
+        .{
+            .expected = "http://example.com:8080/search",
+            .host = "example.com",
+            .port = 8080,
+            .relative = "/search",
+        },
+        .{
+            .expected = "http://example.com:8080/search",
+            .host = "example.com",
+            .port = 8080,
+            .relative = "/search",
+        },
+        .{
+            .expected = "http://example.com/api/user",
+            .host = "example.com",
+            .port = null,
+            .relative = "/api/user",
+        },
+        .{
+            .expected = "http://example.com/api/user",
+            .host = "example.com",
+            .port = null,
+            .relative = "/api/user",
+        },
+        .{
+            .expected = "http://example.com:3000/api/user",
+            .host = "example.com",
+            .port = 3000,
+            .relative = "/api/user",
+        },
+        .{
+            .expected = "http://example.com:3000/api/user",
+            .host = "example.com",
+            .port = 3000,
+            .relative = "/api/user",
+        },
+    };
+    for (&tests) |*t| {
+        const url = try Url.fromRelative(alloc, t.relative, t.protocol, t.host, t.port);
+        try std.testing.expect(std.mem.eql(u8, url.raw, t.expected));
+    }
 }
