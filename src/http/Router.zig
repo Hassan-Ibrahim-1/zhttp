@@ -5,13 +5,12 @@ const Allocator = std.mem.Allocator;
 const http = @import("http.zig");
 const Response = http.Response;
 const Request = http.Request;
+const Handler = http.Handler;
 
 const Router = @This();
 
-pub const HandlerFn = *const fn (*Response, *const Request) anyerror!void;
-
 arena: std.heap.ArenaAllocator,
-handlers: std.StringHashMap(HandlerFn),
+handlers: std.StringHashMap(Handler),
 
 pub fn init(alloc: Allocator) Router {
     return .{
@@ -29,16 +28,29 @@ pub fn deinit(self: *Router) void {
 pub fn handle(
     self: *Router,
     route: []const u8,
-    handler: HandlerFn,
+    handler: Handler,
 ) void {
     self.tryHandle(route, handler) catch unreachable;
+}
+
+pub fn handleFn(
+    self: *Router,
+    route: []const u8,
+    comptime func: Handler.HandleFn,
+) void {
+    self.tryHandle(route, .{
+        .ptr = null,
+        .vtable = &.{
+            .handle = func,
+        },
+    }) catch unreachable;
 }
 
 /// if the same route is registered twice, only the first one is used
 pub fn tryHandle(
     self: *Router,
     route: []const u8,
-    handler: HandlerFn,
+    handler: Handler,
 ) Allocator.Error!void {
     const r = try self.arena.allocator().dupe(u8, route);
     try self.handlers.put(r, handler);
@@ -47,7 +59,7 @@ pub fn tryHandle(
 pub fn serve(self: *Router, res: *Response, req: *const Request) !void {
     const p = req.url.path().path;
     if (self.handlers.get(p)) |handler| {
-        return handler(res, req);
+        return handler.handle(res, req);
     }
     return notFound(res, p);
 }
@@ -61,3 +73,10 @@ fn notFound(res: *Response, path: []const u8) !void {
         .{path},
     );
 }
+
+// pub const FileServer = struct {
+//     pub fn handler(res: *Response, req: *const Request) !void {
+//         _ = res; // autofix
+//         _ = req; // autofix
+//     }
+// };

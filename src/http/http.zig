@@ -9,6 +9,7 @@ pub const Request = @import("Request.zig");
 pub const Response = @import("Response.zig");
 pub const Router = @import("Router.zig");
 pub const Server = @import("Server.zig");
+pub const Handler = @import("Handler.zig");
 
 const log = std.log.scoped(.http);
 

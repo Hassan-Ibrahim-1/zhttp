@@ -15,12 +15,12 @@ pub fn main() !void {
     std.log.info("listening on {}", .{server.address});
 
     var router = http.Router.init(server.alloc);
-    router.handle("/", index);
+    router.handleFn("/", index);
 
     try server.listen(&router);
 }
 
-fn index(res: *http.Response, req: *const http.Request) !void {
+fn index(_: ?*anyopaque, res: *http.Response, req: *const http.Request) !void {
     _ = req; // autofix
     res.status_code = .ok;
     try res.headers.put("Content-Type", "text/html");
