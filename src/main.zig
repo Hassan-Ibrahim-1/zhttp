@@ -14,5 +14,15 @@ pub fn main() !void {
 
     std.log.info("listening on {}", .{server.address});
 
-    try server.listen();
+    var router = http.Router.init(server.alloc);
+    router.handle("/", index);
+
+    try server.listen(&router);
+}
+
+fn index(res: *http.Response, req: *const http.Request) !void {
+    _ = req; // autofix
+    res.status_code = .ok;
+    try res.headers.put("Content-Type", "text/html");
+    try http.serveFile(res, "res/index.html");
 }

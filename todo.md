@@ -82,11 +82,15 @@ TOMORROW:
     -- write a format function for Request that can reproduce the exact request that was sent by the client.
     got error.WouldBlock when sending a request back after the button was pressed
     
-    get started on responses - should be way easier
-    write a format function that constructs a valid http response
+    -- get started on responses - should be way easier
+    -- write a format function that constructs a valid http response
 
     add a handler / router
+        automatically create the Content-Length header
+        figure out how to handle routes like /api/user/{id}
     create a web page with a form, image, etc
+
+    add checks for Responses, make sure they contain valid headers, etc
 
     add more tests for parsing
     a client that can make requests a server

@@ -14,35 +14,34 @@ pub const ParseError = error{
     InvalidBody,
 } || http.UrlParseError;
 
-pub fn parseRequest(server: *http.Server, req: []const u8) ParseError!http.Request {
-    const alloc = server.arena.allocator();
+pub fn parseRequest(server: *http.Server, req: []const u8, arena: Allocator) ParseError!http.Request {
     if (!std.mem.containsAtLeast(u8, req, 2, "\r\n")) {
         return error.InvalidHttpRequest;
     }
     var lines = std.mem.splitSequence(u8, req, "\r\n");
 
-    const req_line = try parseRequestLine(alloc, lines.next().?);
+    const req_line = try parseRequestLine(arena, lines.next().?);
 
-    var headers = std.StringHashMap([]const u8).init(alloc);
+    var headers = std.StringHashMap([]const u8).init(arena);
 
     while (lines.next()) |header| {
         // \r\n\r\n pattern found
         if (header.len == 0) break;
-        const kv = try parseHeader(alloc, header);
+        const kv = try parseHeader(arena, header);
         try headers.put(kv.key, kv.value);
     }
 
     return http.Request{
         .method = req_line.method,
         .url = try .fromRelative(
-            alloc,
+            arena,
             req_line.url_raw,
             .http11,
             server.host,
             server.address.getPort(),
         ),
         .protocol = req_line.protocol,
-        .arena = alloc,
+        .arena = arena,
         .body = lines.next() orelse "",
         .headers = headers,
     };
@@ -110,7 +109,7 @@ test parseRequest {
     var server = try http.Server.init(std.testing.allocator, host, 8080);
     defer server.deinit();
 
-    const req = try parseRequest(&server, reqstr);
+    const req = try parseRequest(&server, reqstr, server.arena.allocator());
 
     try std.testing.expect(req.method == .get);
     try std.testing.expect(req.protocol == .http11);

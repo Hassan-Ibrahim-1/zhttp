@@ -9,24 +9,25 @@ const http = @import("http.zig");
 const Server = @This();
 
 alloc: Allocator,
-arena: std.heap.ArenaAllocator,
 address: std.net.Address,
 host: []const u8,
 listener: ?posix.socket_t,
+router: *http.Router,
 
 pub fn init(alloc: Allocator, host: []const u8, port: u16) !Server {
     const addr = try net.Address.parseIp(host, port);
 
     return .{
         .alloc = alloc,
-        .arena = .init(alloc),
         .host = host,
         .address = addr,
         .listener = null,
+        .router = undefined,
     };
 }
 
-pub fn listen(self: *Server) !void {
+pub fn listen(self: *Server, router: *http.Router) !void {
+    self.router = router;
     const tpe: u32 = posix.SOCK.STREAM;
     const protocol: u32 = posix.IPPROTO.TCP;
     const listener = try posix.socket(self.address.any.family, tpe, protocol);
@@ -44,7 +45,6 @@ pub fn listen(self: *Server) !void {
     );
     try posix.listen(listener, 128);
 
-    // var buf: [512]u8 = undefined;
     while (true) {
         var client_address: net.Address = undefined;
         var client_address_len: posix.socklen_t = @sizeOf(net.Address);
@@ -70,6 +70,10 @@ fn handleClient(self: *Server, client: *http.Client) !void {
     defer client.deinit();
     log.info("connected to {}", .{client.addr});
 
+    var arena = std.heap.ArenaAllocator.init(self.alloc);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
     var reader = try client.reader(self.alloc);
     defer reader.deinit();
 
@@ -80,20 +84,21 @@ fn handleClient(self: *Server, client: *http.Client) !void {
         );
         return err;
     };
-    defer self.alloc.free(msg);
-    // log.info("recieved\n{s}", .{msg});
 
-    const alloc = self.arena.allocator();
-    _ = alloc; // autofix
-    const req = try http.parser.parseRequest(self, msg);
-    _ = req; // autofix
+    const req = try http.parser.parseRequest(self, msg, alloc);
 
-    // var res: http.Response = undefined;
+    var res: http.Response = undefined;
+    res.arena = alloc;
+    res.body = "";
+    res.headers = .init(alloc);
+    try self.router.serve(&res, &req);
+    if (!res.headers.contains("Content-Length") and res.body.len > 0) {
+        const len = try std.fmt.allocPrint(alloc, "{}", .{res.body.len});
+        try res.headers.put("Content-Length", len);
+    }
 
-    // writeAll(client.socket, res) catch |err| {
-    //     log.err("Failed to write to socket: {}", .{err});
-    //     return err;
-    // };
+    const res_str = try std.fmt.allocPrint(alloc, "{}", .{res});
+    try writeAll(client.socket, res_str);
 }
 
 /// reads from the socket
@@ -130,7 +135,7 @@ pub fn deinit(self: *Server) void {
     if (self.listener != null) {
         @panic("Close the server before calling deinit");
     }
-    self.arena.deinit();
+    self.router.deinit();
 }
 
 fn writeMessage(socket: posix.socket_t, msg: []const u8) !void {

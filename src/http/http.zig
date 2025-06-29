@@ -1,16 +1,16 @@
 const std = @import("std");
 const posix = std.posix;
 const Allocator = std.mem.Allocator;
+pub const Status = std.http.Status;
 
 pub const Client = @import("Client.zig");
+pub const parser = @import("parser.zig");
 pub const Request = @import("Request.zig");
 pub const Response = @import("Response.zig");
+pub const Router = @import("Router.zig");
 pub const Server = @import("Server.zig");
-pub const parser = @import("parser.zig");
 
 const log = std.log.scoped(.http);
-
-pub const Status = std.http.Status;
 
 pub const Method = enum {
     get,
@@ -276,6 +276,17 @@ pub const HttpReader = struct {
         return msg;
     }
 };
+
+/// only sets the response's body, nothing else
+/// the caller must set the content type and status code
+pub fn serveFile(res: *Response, path: []const u8) !void {
+    const f = try std.fs.cwd().readFileAlloc(
+        res.arena,
+        path,
+        std.math.maxInt(u32),
+    );
+    res.body = f;
+}
 
 test "HttpReader.bufferedMessage multiple messages" {
     const alloc = std.testing.allocator;
