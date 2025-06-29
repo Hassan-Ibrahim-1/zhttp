@@ -11,14 +11,16 @@ const Server = @This();
 alloc: Allocator,
 arena: std.heap.ArenaAllocator,
 address: std.net.Address,
+host: []const u8,
 listener: ?posix.socket_t,
 
-pub fn init(alloc: Allocator, ip: []const u8, port: u16) !Server {
-    const addr = try net.Address.parseIp(ip, port);
+pub fn init(alloc: Allocator, host: []const u8, port: u16) !Server {
+    const addr = try net.Address.parseIp(host, port);
 
     return .{
         .alloc = alloc,
         .arena = .init(alloc),
+        .host = host,
         .address = addr,
         .listener = null,
     };
@@ -80,20 +82,21 @@ fn handleClient(self: *Server, client: *http.Client) !void {
     // log.info("recieved\n{s}", .{msg});
 
     const alloc = self.arena.allocator();
-    const req = try parseRequest(alloc, msg);
+    const req = try self.parseRequest(msg);
 
     var res: []const u8 = undefined;
 
     switch (req.method) {
         .get => {
-            if (std.mem.eql(u8, req.url, "/")) {
+            const path = req.url.path();
+            if (path.eql("/")) {
                 const f = try std.fs.cwd().readFileAlloc(
                     alloc,
                     "index.html",
                     std.math.maxInt(u32),
                 );
                 res = try std.fmt.allocPrint(alloc, response_fmt, .{ f.len, f });
-            } else if (std.mem.eql(u8, req.url, "/index.html")) {
+            } else if (path.eql("/index.html")) {
                 const f = try std.fs.cwd().readFileAlloc(
                     alloc,
                     "index.html",
@@ -101,6 +104,7 @@ fn handleClient(self: *Server, client: *http.Client) !void {
                 );
                 res = try std.fmt.allocPrint(alloc, response_fmt, .{ f.len, f });
             } else {
+                log.info("{s} not found", .{path.path});
                 res = resource_not_found;
             }
         },
@@ -121,10 +125,10 @@ fn handleClient(self: *Server, client: *http.Client) !void {
         ),
     }
 
-    // writeAll(client.socket, res) catch |err| {
-    //     log.err("Failed to write to socket: {}", .{err});
-    //     return err;
-    // };
+    writeAll(client.socket, res) catch |err| {
+        log.err("Failed to write to socket: {}", .{err});
+        return err;
+    };
 }
 
 /// reads from the socket
@@ -201,9 +205,10 @@ const ParseError = error{
     InvalidProtocol,
     InvalidHeader,
     InvalidBody,
-} || Allocator.Error;
+} || http.UrlParseError;
 
-fn parseRequest(alloc: Allocator, req: []const u8) ParseError!http.Request {
+fn parseRequest(self: *Server, req: []const u8) ParseError!http.Request {
+    const alloc = self.arena.allocator();
     if (!std.mem.containsAtLeast(u8, req, 2, "\r\n")) {
         return error.InvalidHttpRequest;
     }
@@ -222,7 +227,13 @@ fn parseRequest(alloc: Allocator, req: []const u8) ParseError!http.Request {
 
     return http.Request{
         .method = req_line.method,
-        .url = req_line.url,
+        .url = try .fromRelative(
+            alloc,
+            req_line.url_raw,
+            .http11,
+            self.host,
+            self.address.getPort(),
+        ),
         .protocol = req_line.protocol,
         .arena = alloc,
         .body = lines.next() orelse "",
@@ -235,7 +246,7 @@ fn parseRequestLine(
     req_line: []const u8,
 ) ParseError!struct {
     method: http.Method,
-    url: []u8,
+    url_raw: []u8,
     protocol: http.Protocol,
 } {
     if (!std.mem.containsAtLeast(u8, req_line, 2, " ")) {
@@ -252,7 +263,7 @@ fn parseRequestLine(
 
     return .{
         .method = method,
-        .url = url,
+        .url_raw = url,
         .protocol = protocol,
     };
 }
@@ -288,15 +299,15 @@ test parseRequest {
     });
     const reqstr = "GET /static/image.png HTTP/1.1\r\nHost: www.example.com\r\nUser-Agent: Mozilla/5.0\r\nAccept: text/html\r\nConnection: close\r\n\r\n";
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
+    const host = "127.0.0.1";
+    var server = try Server.init(std.testing.allocator, host, 8080);
+    defer server.deinit();
 
-    const req = try parseRequest(alloc, reqstr);
+    const req = try server.parseRequest(reqstr);
 
     try std.testing.expect(req.method == .get);
     try std.testing.expect(req.protocol == .http11);
-    try std.testing.expect(std.mem.eql(u8, req.url, "/static/image.png"));
+    try std.testing.expect(req.url.path().eql("/static/image.png"));
 
     const headers = &req.headers;
     try std.testing.expect(expected_headers.keys().len == headers.count());
@@ -328,7 +339,7 @@ test parseRequestLine {
     const rl = try parseRequestLine(alloc, "GET /index.html HTTP/1.1");
     try std.testing.expect(rl.method == .get);
     try std.testing.expect(rl.protocol == .http11);
-    try std.testing.expect(std.mem.eql(u8, rl.url, "/index.html"));
+    try std.testing.expect(std.mem.eql(u8, rl.url_raw, "/index.html"));
 
     var rle = parseRequestLine(alloc, "BADMETHOD /test.html HTTP/1.1");
     try std.testing.expectError(error.InvalidMethod, rle);

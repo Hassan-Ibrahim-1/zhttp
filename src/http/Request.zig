@@ -1,9 +1,10 @@
 const std = @import("std");
-const http = @import("http.zig");
 const Allocator = std.mem.Allocator;
 
+const http = @import("http.zig");
+
 method: http.Method,
-url: []const u8,
+url: http.Url,
 protocol: http.Protocol,
 headers: std.StringHashMap([]const u8),
 body: []const u8,

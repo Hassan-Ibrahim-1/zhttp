@@ -71,7 +71,9 @@ TOMORROW:
     -- respond to a basic get request, ignore any body
     -- read http body in HttpReader using the Content-Length header
     -- parse body
+    -- url parsing
     be able to accept post requests from stuff like forms
+    add more tests for parsing
     write a format function for Request that can reproduce the exact
     request that was sent by the client.
     a mocking library that can spin up a server and client.

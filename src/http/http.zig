@@ -80,6 +80,8 @@ pub const Path = struct {
     }
 };
 
+pub const UrlParseError = std.fmt.BufPrintError || Allocator.Error;
+
 pub const Url = struct {
     /// this must always be an absolute url
     raw: []const u8,
@@ -92,7 +94,7 @@ pub const Url = struct {
         protocol: Protocol,
         hst: []const u8,
         prt: ?u16,
-    ) !Url {
+    ) UrlParseError!Url {
         // TODO: support queries in fromRelative
         const scheme = switch (protocol) {
             .http11 => "http",
@@ -155,7 +157,7 @@ pub const Url = struct {
         _ = it.next().?;
         const s1 = it.next().?;
 
-        const i = std.mem.indexOf(u8, s1, "/").? + 1;
+        const i = std.mem.indexOf(u8, s1, "/").?;
         if (std.mem.indexOf(u8, s1, "?")) |end| {
             return Path{ .path = s1[i..end] };
         }
@@ -368,49 +370,49 @@ test Url {
             .raw = "http://example.com/search",
             .host = "example.com",
             .port = null,
-            .path = "search",
+            .path = "/search",
         },
         .{
             .raw = "http://example.com/search?q=books",
             .host = "example.com",
             .port = null,
-            .path = "search",
+            .path = "/search",
         },
         .{
             .raw = "http://example.com:8080/search",
             .host = "example.com",
             .port = 8080,
-            .path = "search",
+            .path = "/search",
         },
         .{
             .raw = "http://example.com:8080/search?q=books",
             .host = "example.com",
             .port = 8080,
-            .path = "search",
+            .path = "/search",
         },
         .{
             .raw = "http://example.com/api/user",
             .host = "example.com",
             .port = null,
-            .path = "api/user",
+            .path = "/api/user",
         },
         .{
             .raw = "http://example.com/api/user?id=5",
             .host = "example.com",
             .port = null,
-            .path = "api/user",
+            .path = "/api/user",
         },
         .{
             .raw = "http://example.com:3000/api/user",
             .host = "example.com",
             .port = 3000,
-            .path = "api/user",
+            .path = "/api/user",
         },
         .{
             .raw = "http://example.com:3000/api/user?id=5",
             .host = "example.com",
             .port = 3000,
-            .path = "api/user",
+            .path = "/api/user",
         },
     };
     for (&tests, 0..) |*t, i| {
