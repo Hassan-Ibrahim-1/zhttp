@@ -58,7 +58,9 @@ pub fn listen(self: *Server) !void {
             continue;
         };
         var client = try http.Client.init(client_address, socket);
-        self.handleClient(&client) catch continue;
+        self.handleClient(&client) catch |err| {
+            log.err("client failed: {}", .{err});
+        };
     }
 }
 
@@ -88,18 +90,19 @@ fn handleClient(self: *Server, client: *http.Client) !void {
 
     switch (req.method) {
         .get => {
-            const path = req.url.path();
-            if (path.eql("/")) {
+            const p = try std.mem.concat(alloc, u8, &.{ "res", req.url.path().path });
+            const path = http.Path{ .path = p };
+            if (path.exists() and try path.kind() == .file) {
                 const f = try std.fs.cwd().readFileAlloc(
                     alloc,
-                    "index.html",
+                    path.path,
                     std.math.maxInt(u32),
                 );
                 res = try std.fmt.allocPrint(alloc, response_fmt, .{ f.len, f });
-            } else if (path.eql("/index.html")) {
+            } else if (path.eql("res/")) {
                 const f = try std.fs.cwd().readFileAlloc(
                     alloc,
-                    "index.html",
+                    "res/index.html",
                     std.math.maxInt(u32),
                 );
                 res = try std.fmt.allocPrint(alloc, response_fmt, .{ f.len, f });
@@ -118,6 +121,8 @@ fn handleClient(self: *Server, client: *http.Client) !void {
             }
             log.info("body length: {}", .{req.body.len});
             log.info("body: {s}", .{req.body});
+            const html = "<p>BEBE!</p>";
+            res = try std.fmt.allocPrint(alloc, response_fmt, .{ html.len, html });
         },
         else => log.err(
             "can't handle method: {s}",

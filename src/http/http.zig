@@ -2,11 +2,11 @@ const std = @import("std");
 const posix = std.posix;
 const Allocator = std.mem.Allocator;
 
-const log = std.log.scoped(.http);
-
-pub const Server = @import("Server.zig");
 pub const Client = @import("Client.zig");
 pub const Request = @import("Request.zig");
+pub const Server = @import("Server.zig");
+
+const log = std.log.scoped(.http);
 
 pub const Method = enum {
     get,
@@ -77,6 +77,11 @@ pub const Path = struct {
             }
         };
         return true;
+    }
+
+    pub fn kind(self: Path) std.fs.Dir.StatFileError!std.fs.File.Kind {
+        const stat = std.fs.cwd().statFile(self.path) catch unreachable;
+        return stat.kind;
     }
 };
 
@@ -365,6 +370,7 @@ test Url {
         port: ?u16,
         path: []const u8,
     };
+
     const tests = [_]Test{
         .{
             .raw = "http://example.com/search",

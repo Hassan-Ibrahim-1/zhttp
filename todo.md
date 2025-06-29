@@ -15,6 +15,7 @@ http2
 caching
 cookies
 rss reader
+unix processes
 
 Next up:
     write a server that can send over the contents of a requested file
@@ -72,15 +73,16 @@ TOMORROW:
     -- read http body in HttpReader using the Content-Length header
     -- parse body
     -- url parsing
-    be able to accept post requests from stuff like forms
+    -- be able to accept post requests from stuff like forms
     add more tests for parsing
-    write a format function for Request that can reproduce the exact
-    request that was sent by the client.
+    write a format function for Request that can reproduce the exact request that was sent by the client.
     a mocking library that can spin up a server and client.
         use this to test functions that require sockets
+    got error.WouldBlock when sending a request back after the button was pressed
     
     get started on responses - should be way easier
     write a format function that constructs a valid http response
+
 
     create a web page with a form, image, etc
 
