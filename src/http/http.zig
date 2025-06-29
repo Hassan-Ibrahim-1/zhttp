@@ -5,8 +5,11 @@ const Allocator = std.mem.Allocator;
 pub const Client = @import("Client.zig");
 pub const Request = @import("Request.zig");
 pub const Server = @import("Server.zig");
+pub const parser = @import("parser.zig");
 
 const log = std.log.scoped(.http);
+
+pub const Status = std.http.Status;
 
 pub const Method = enum {
     get,

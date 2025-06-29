@@ -17,6 +17,11 @@ cookies
 rss reader
 unix processes
 
+src/main.zig
+    const x = 0;
+    _ = x; // autofix
+
+
 Next up:
     write a server that can send over the contents of a requested file
     be able to setup handlers, routers, etc
@@ -74,17 +79,21 @@ TOMORROW:
     -- parse body
     -- url parsing
     -- be able to accept post requests from stuff like forms
-    add more tests for parsing
-    write a format function for Request that can reproduce the exact request that was sent by the client.
-    a mocking library that can spin up a server and client.
-        use this to test functions that require sockets
+    -- write a format function for Request that can reproduce the exact request that was sent by the client.
     got error.WouldBlock when sending a request back after the button was pressed
     
     get started on responses - should be way easier
     write a format function that constructs a valid http response
 
-
+    add a handler / router
     create a web page with a form, image, etc
+
+    add more tests for parsing
+    a client that can make requests a server
+    a mocking library that can spin up a server and client.
+        use this to test functions that require sockets
+    maybe this is possible in the normal testing stuff
+
 
 GET /index.html HTTP/1.1\r\n
 Host: www.example.com\r\n

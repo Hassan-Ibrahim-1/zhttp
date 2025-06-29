@@ -3,17 +3,16 @@ const Allocator = std.mem.Allocator;
 
 const http = @import("http.zig");
 
-const Request = @This();
+const Response = @This();
 
-method: http.Method,
-url: http.Url,
 protocol: http.Protocol,
+status_code: http.Status,
 headers: std.StringHashMap([]const u8),
-body: []const u8,
 arena: Allocator,
+body: []const u8,
 
 pub fn format(
-    self: *const Request,
+    self: *const Response,
     comptime fmt: []const u8,
     options: std.fmt.FormatOptions,
     out_stream: anytype,
@@ -23,8 +22,12 @@ pub fn format(
 
     try std.fmt.format(
         out_stream,
-        "{s} {s} {s}\r\n",
-        .{ self.method.str(), self.url.raw, self.protocol.str() },
+        "{s} {} {s}\r\n",
+        .{
+            self.protocol.str(),
+            @intFromEnum(self.status_code),
+            self.status_code.phrase().?,
+        },
     );
 
     var iter = self.headers.iterator();
@@ -40,20 +43,20 @@ pub fn format(
 test format {
     const alloc = std.testing.allocator;
 
-    var req = Request{
-        .method = .get,
+    var res = Response{
+        .status_code = .not_found,
         .protocol = .http11,
-        .url = .{ .raw = "http://example.com/index.html" },
-        .body = "<p>Hello</p>",
+        .body = "Oops",
         .arena = undefined,
         .headers = .init(alloc),
     };
-    defer req.headers.deinit();
-    try req.headers.put("Content-Type", "text/html");
-    try req.headers.put("Content-Length", "12");
+    defer res.headers.deinit();
+    try res.headers.put("Connection", "close");
+    try res.headers.put("Content-Length", "4");
+    try res.headers.put("Content-Type", "text/plain");
 
-    const expected = "GET http://example.com/index.html HTTP/1.1\r\nContent-Type: text/html\r\nContent-Length: 12\r\n\r\n<p>Hello</p>";
-    const actual = try std.fmt.allocPrint(alloc, "{}", .{req});
+    const expected = "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\nConnection: close\r\nContent-Length: 4\r\n\r\nOops";
+    const actual = try std.fmt.allocPrint(alloc, "{}", .{res});
     defer alloc.free(actual);
     errdefer std.debug.print("got={s}\n", .{actual});
     try std.testing.expect(std.mem.eql(u8, actual, expected));
