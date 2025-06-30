@@ -17,11 +17,24 @@ pub fn main() !void {
     var router = http.Router.init(server.alloc);
     router.handleFn("/", index);
 
+    var fs = try http.FileServer.init("res/");
+    defer fs.deinit();
+
+    var sp = http.StripPrefix{
+        .prefix = "/res/",
+        .underlying = fs.handler(),
+    };
+
+    router.handle("/res/", sp.handler());
+
     try server.listen(&router);
 }
 
 fn index(_: ?*anyopaque, res: *http.Response, req: *const http.Request) !void {
-    _ = req; // autofix
+    const p = req.url.path();
+    if (!p.eql("/index.html") and !p.eql("/")) {
+        return http.notFound(res, p.path);
+    }
     res.status_code = .ok;
     try res.headers.put("Content-Type", "text/html");
     try http.serveFile(res, "res/index.html");

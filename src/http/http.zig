@@ -10,6 +10,7 @@ pub const Response = @import("Response.zig");
 pub const Router = @import("Router.zig");
 pub const Server = @import("Server.zig");
 pub const Handler = @import("Handler.zig");
+pub const Mime = @import("mime.zig").Mime;
 
 const log = std.log.scoped(.http);
 
@@ -289,6 +290,113 @@ pub fn serveFile(res: *Response, path: []const u8) !void {
     res.body = f;
 }
 
+pub fn notFound(res: *Response, path: []const u8) !void {
+    res.status_code = .not_found;
+    try res.headers.put("Content-Type", "text/html");
+    res.body = try std.fmt.allocPrint(
+        res.arena,
+        "<h1>404 - Not Found</h1><p>{s} is not a valid url</p>\n",
+        .{path},
+    );
+}
+
+fn fileExtension(f: []const u8) ?[]const u8 {
+    var iter = std.mem.splitBackwardsScalar(u8, f, '.');
+    return iter.next();
+}
+
+pub const StripPrefix = struct {
+    underlying: Handler,
+    prefix: []const u8,
+
+    pub fn handle(ctx: ?*anyopaque, res: *Response, req: *const Request) !void {
+        const self: *StripPrefix = @ptrCast(@alignCast(ctx.?));
+        const path = req.url.path().path;
+        const index = std.mem.indexOf(u8, path, self.prefix);
+        if (index) |i| {
+            const new_path = path[i + self.prefix.len - 1 ..];
+            var new_req = req.*;
+            new_req.url = try Url.fromRelative(
+                res.arena,
+                new_path,
+                .http11,
+                req.url.host(),
+                try req.url.port(),
+            );
+            try self.underlying.handle(res, &new_req);
+            // send a better message with the proper path
+            if (res.status_code == .not_found) {
+                return notFound(res, path);
+            }
+        }
+        return notFound(res, path);
+    }
+
+    pub fn handler(self: *StripPrefix) Handler {
+        return .{
+            .ptr = self,
+            .vtable = &.{
+                .handle = handle,
+            },
+        };
+    }
+};
+
+pub const FileServer = struct {
+    dir: std.fs.Dir,
+
+    pub fn init(
+        dir_path: []const u8,
+    ) std.fs.Dir.OpenError!FileServer {
+        const dir = try std.fs.cwd().openDir(dir_path, .{ .iterate = true });
+        return .{
+            .dir = dir,
+        };
+    }
+
+    pub fn deinit(self: *FileServer) void {
+        self.dir.close();
+    }
+
+    pub fn handle(ctx: ?*anyopaque, res: *Response, req: *const Request) !void {
+        const self: *FileServer = @ptrCast(@alignCast(ctx.?));
+        const path = Path{
+            .path = req.url.path().path[1..], // remove the beginning /
+        };
+        var iter = self.dir.iterate();
+        while (try iter.next()) |file| {
+            if (file.kind == .file and path.eql(file.name)) {
+                res.status_code = .ok;
+                const ext = fileExtension(file.name).?;
+                const content_type: []const u8 = ty: {
+                    if (Mime.from(ext)) |mime| {
+                        break :ty mime.str();
+                    }
+                    break :ty "application/octect-stream";
+                };
+                try res.headers.put("Content-Type", content_type);
+                const f = try self.dir.readFileAlloc(
+                    res.arena,
+                    path.path,
+                    std.math.maxInt(u32),
+                );
+                res.body = f;
+                return;
+            }
+        }
+        return notFound(res, path.path);
+    }
+
+    pub fn handler(self: *FileServer) Handler {
+        return .{
+            .ptr = self,
+            .vtable = &.{
+                .handle = handle,
+            },
+        };
+    }
+};
+
 test "HttpReader.bufferedMessage multiple messages" {
     const alloc = std.testing.allocator;
     const msg =
@@ -517,5 +625,27 @@ test "Url.fromRelative" {
     for (&tests) |*t| {
         const url = try Url.fromRelative(alloc, t.relative, t.protocol, t.host, t.port);
         try std.testing.expect(std.mem.eql(u8, url.raw, t.expected));
+    }
+}
+
+test fileExtension {
+    const Test = struct {
+        file: []const u8,
+        expected: []const u8,
+    };
+    const tests = [_]Test{
+        .{
+            .file = "index.html",
+            .expected = "html",
+        },
+        .{
+            .file = "image.test.png",
+            .expected = "png",
+        },
+    };
+    for (&tests) |t| {
+        try std.testing.expect(
+            std.mem.eql(u8, fileExtension(t.file).?, t.expected),
+        );
     }
 }

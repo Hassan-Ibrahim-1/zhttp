@@ -91,7 +91,7 @@ fn handleClient(self: *Server, client: *http.Client) !void {
     res.arena = alloc;
     res.body = "";
     res.headers = .init(alloc);
-    try self.router.serve(&res, &req);
+    try self.router.dispatch(&res, &req);
     if (!res.headers.contains("Content-Length") and res.body.len > 0) {
         const len = try std.fmt.allocPrint(alloc, "{}", .{res.body.len});
         try res.headers.put("Content-Length", len);
