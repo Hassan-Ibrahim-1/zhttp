@@ -126,7 +126,7 @@ test findBestRoute {
     var router = Router.init(alloc);
 
     const T = struct {
-        fn h(_: ?*anyopaque, _: *http.Response, _: *const http.Request) !void {}
+        fn h(_: *http.Response, _: *const http.Request) !void {}
         fn newReq(ally: Allocator, route: []const u8) Request {
             var req: Request = undefined;
             req.url = http.Url.fromRelative(

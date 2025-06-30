@@ -324,10 +324,9 @@ pub const StripPrefix = struct {
                 try req.url.port(),
             );
             try self.underlying.handle(res, &new_req);
-            // send a better message with the proper path
-            if (res.status_code == .not_found) {
-                return notFound(res, path);
-            }
+            // if not found, then send a better error message with the proper path
+            // and not the stripped one
+            if (res.status_code != .not_found) return;
         }
         return notFound(res, path);
     }
