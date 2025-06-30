@@ -85,9 +85,21 @@ TOMORROW:
     -- get started on responses - should be way easier
     -- write a format function that constructs a valid http response
 
-    add a handler / router
-        automatically create the Content-Length header
-        figure out how to handle routes like /api/user/{id}
+    -- add a handler / router
+        -- automatically create the Content-Length header
+        -- figure out how to handle routes like /api/user/{id}
+    make isPrefixOf and findBestRoute better. they are really inefficient and dirty
+    fix up the dirty code in FileServer and StripPrefix, some repeated stuff, etc
+        just go through it
+
+    add a tagged union to FileServer that lets it configure what files
+        to allow better. for example there should be a field called
+        allow_only which is a []const []const u8
+        or a field called exclude
+        these should not be specific files but rather patterns
+        to follow. for example allow_only could include something
+        like *.html and test.js
+
     create a web page with a form, image, etc
 
     add checks for Responses, make sure they contain valid headers, etc
