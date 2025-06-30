@@ -17,7 +17,7 @@ pub fn main() !void {
     var router = http.Router.init(server.alloc);
     router.handleFn("/", index);
 
-    var fs = try http.FileServer.init("res/");
+    var fs = try http.FileServer.init("res/", .{ .exclude = &.{"*.jpeg"} });
 
     var sp = http.StripPrefix{
         .prefix = "/res/",

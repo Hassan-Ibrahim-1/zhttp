@@ -305,6 +305,48 @@ fn fileExtension(f: []const u8) ?[]const u8 {
     return iter.next();
 }
 
+// MIT License
+//
+// Copyright (c) 2021 Matthew Knight
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+fn matchFilePattern(pattern: []const u8, name: []const u8) bool {
+    if (std.mem.eql(u8, pattern, "*")) return true;
+
+    var i: usize = 0;
+    var it = std.mem.tokenizeScalar(u8, pattern, '*');
+    var exact_begin = pattern.len > 0 and pattern[0] != '*';
+
+    while (it.next()) |substr| {
+        if (std.mem.indexOf(u8, name[i..], substr)) |j| {
+            if (exact_begin) {
+                if (j != 0) return false;
+                exact_begin = false;
+            }
+
+            i += j + substr.len;
+        } else return false;
+    }
+
+    return if (pattern[pattern.len - 1] == '*') true else i == name.len;
+}
+
 pub const StripPrefix = struct {
     underlying: Handler,
     prefix: []const u8,
@@ -324,8 +366,7 @@ pub const StripPrefix = struct {
                 try req.url.port(),
             );
             try self.underlying.handle(res, &new_req);
-            // if not found, then send a better error message with the proper path
-            // and not the stripped one
+            // if not found, then send a better error message with the proper path and not the stripped one
             if (res.status_code != .not_found) return;
         }
         return notFound(res, path);
@@ -342,14 +383,18 @@ pub const StripPrefix = struct {
 };
 
 pub const FileServer = struct {
-    dir: std.fs.Dir,
+    pub const Options = struct {
+        exclude: []const []const u8,
+    };
 
-    pub fn init(
-        dir_path: []const u8,
-    ) std.fs.Dir.OpenError!FileServer {
+    dir: std.fs.Dir,
+    options: ?Options,
+
+    pub fn init(dir_path: []const u8, options: ?Options) std.fs.Dir.OpenError!FileServer {
         const dir = try std.fs.cwd().openDir(dir_path, .{ .iterate = true });
         return .{
             .dir = dir,
+            .options = options,
         };
     }
 
@@ -366,6 +411,11 @@ pub const FileServer = struct {
         var iter = self.dir.iterate();
         while (try iter.next()) |file| {
             if (file.kind == .file and path.eql(file.name)) {
+                if (!self.isValid(file.name)) {
+                    log.info("request for excluded file {s} sending 404", .{file.name});
+                    break;
+                }
+
                 res.status_code = .ok;
                 const ext = fileExtension(file.name).?;
                 const content_type: []const u8 = ty: {
@@ -385,6 +435,14 @@ pub const FileServer = struct {
             }
         }
         return notFound(res, path.path);
+    }
+
+    fn isValid(self: *const FileServer, file_name: []const u8) bool {
+        const options = self.options orelse return true;
+        for (options.exclude) |pattern| {
+            if (matchFilePattern(pattern, file_name)) return false;
+        }
+        return true;
     }
 
     pub fn handler(self: *FileServer) Handler {
@@ -648,5 +706,114 @@ test fileExtension {
         try std.testing.expect(
             std.mem.eql(u8, fileExtension(t.file).?, t.expected),
         );
+    }
+}
+
+test "FileServer.isValid" {
+    const Test = struct {
+        exclude: []const []const u8,
+        files: []const struct { name: []const u8, valid: bool },
+    };
+    const tests = [_]Test{
+        .{
+            .exclude = &.{},
+            .files = &.{
+                .{ .name = "test.html", .valid = true },
+                .{ .name = "image.png", .valid = true },
+                .{ .name = "test/file.txt", .valid = true },
+            },
+        },
+        .{
+            .exclude = &.{"*.html"},
+            .files = &.{
+                .{ .name = "test.html", .valid = false },
+                .{ .name = "res/index.html", .valid = false },
+                .{ .name = "image.png", .valid = true },
+                .{ .name = "image.html.png", .valid = true },
+                .{ .name = "tmp-html.txt", .valid = true },
+            },
+        },
+        .{
+            .exclude = &.{"test/*"},
+            .files = &.{
+                .{ .name = "test.html", .valid = true },
+                .{ .name = "test/image.png", .valid = false },
+                .{ .name = "image/test/file.png", .valid = true },
+            },
+        },
+        .{
+            .exclude = &.{ "*.png", "*.jpeg" },
+            .files = &.{
+                .{ .name = "image.png", .valid = false },
+                .{ .name = "image.jpeg", .valid = false },
+                .{ .name = "photo.jpg", .valid = true },
+                .{ .name = "icons/image.png", .valid = false },
+                .{ .name = "readme.txt", .valid = true },
+            },
+        },
+        .{
+            .exclude = &.{"res/*.html"},
+            .files = &.{
+                .{ .name = "res/index.html", .valid = false },
+                .{ .name = "res/about.html", .valid = false },
+                .{ .name = "res/images/photo.png", .valid = true },
+                .{ .name = "index.html", .valid = true },
+            },
+        },
+        .{
+            .exclude = &.{"*/file.txt"},
+            .files = &.{
+                .{ .name = "file.txt", .valid = true },
+                .{ .name = "test/file.txt", .valid = false },
+                .{ .name = "data/file.txt", .valid = false },
+                .{ .name = "file/data.txt", .valid = true },
+            },
+        },
+        .{
+            .exclude = &.{ "docs/*", "*.md" },
+            .files = &.{
+                .{ .name = "docs/index.html", .valid = false },
+                .{ .name = "docs/guide.pdf", .valid = false },
+                .{ .name = "README.md", .valid = false },
+                .{ .name = "src/main.c", .valid = true },
+            },
+        },
+        .{
+            .exclude = &.{"*/test/*"},
+            .files = &.{
+                .{ .name = "test/file.txt", .valid = true },
+                .{ .name = "src/test/data.txt", .valid = false },
+                .{ .name = "lib/test/utils.c", .valid = false },
+                .{ .name = "lib/main.c", .valid = true },
+            },
+        },
+        .{
+            .exclude = &.{"**"},
+            .files = &.{
+                .{ .name = "anyfile.txt", .valid = false },
+                .{ .name = "subdir/file.png", .valid = false },
+                .{ .name = "a/b/c.txt", .valid = false },
+            },
+        },
+    };
+
+    for (&tests) |*t| {
+        const fs = FileServer{
+            .dir = undefined,
+            .options = if (t.exclude.len > 0)
+                .{ .exclude = t.exclude }
+            else
+                null,
+        };
+        for (t.files) |file| {
+            errdefer std.debug.print(
+                "[{s}] expected={} got={}\n",
+                .{ file.name, file.valid, fs.isValid(file.name) },
+            );
+            try std.testing.expectEqual(
+                file.valid,
+                fs.isValid(file.name),
+            );
+        }
     }
 }
