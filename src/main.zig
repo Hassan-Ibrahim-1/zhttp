@@ -37,3 +37,7 @@ fn index(res: *http.Response, req: *const http.Request) !void {
     try res.headers.put("Content-Type", "text/html");
     try http.serveFile(res, "res/index.html");
 }
+
+test {
+    _ = std.testing.refAllDeclsRecursive(@This());
+}

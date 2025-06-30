@@ -107,9 +107,12 @@ test parseRequest {
 
     const host = "127.0.0.1";
     var server = try http.Server.init(std.testing.allocator, host, 8080);
-    defer server.deinit();
 
-    const req = try parseRequest(&server, reqstr, server.arena.allocator());
+    var arena = std.heap.ArenaAllocator.init(server.alloc);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const req = try parseRequest(&server, reqstr, alloc);
 
     try std.testing.expect(req.method == .get);
     try std.testing.expect(req.protocol == .http11);
