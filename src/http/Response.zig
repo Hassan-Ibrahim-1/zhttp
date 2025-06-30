@@ -26,7 +26,7 @@ pub fn format(
         .{
             self.protocol.str(),
             @intFromEnum(self.status_code),
-            self.status_code.phrase().?,
+            self.status_code.phrase() orelse "Custom Status",
         },
     );
 

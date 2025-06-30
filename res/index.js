@@ -1,26 +1,26 @@
 document.addEventListener("DOMContentLoaded", function () {
-    const button = document.getElementById("hey-button");
-
-    button.addEventListener("click", function () {
-        console.log("Button was clicked!");
-        fetch("/button-click", {
+    const form = document.getElementById("name-form");
+    form.addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const name = document.getElementById("name").value;
+        fetch("/submit-form", {
             method: "POST",
             headers: {
-                "Content-Type": "text/plain",
+                "Content-Type": "application/json",
             },
-            body: "A button was pressed",
+            body: JSON.stringify({ name }),
         })
             .then((res) => {
                 if (!res.ok) {
-                    throw new Error(`Server error: ${res.status}`);
+                    throw new Error(`Server error: ${res}`);
                 }
-                return res.text();
+                return res.json();
             })
-            .then((data) => {
-                console.log("server response:", data);
+            .then((res) => {
+                console.log("Server response:", res);
             })
             .catch((err) => {
-                console.error("request failed:", err);
+                console.error("Request failed:", err);
             });
     });
 });

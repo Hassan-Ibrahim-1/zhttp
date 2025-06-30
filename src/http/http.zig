@@ -351,7 +351,7 @@ pub const StripPrefix = struct {
     underlying: Handler,
     prefix: []const u8,
 
-    pub fn handle(ctx: ?*anyopaque, res: *Response, req: *const Request) !void {
+    fn handle(ctx: ?*anyopaque, res: *Response, req: *const Request) !void {
         const self: *StripPrefix = @ptrCast(@alignCast(ctx.?));
         const path = req.url.path().path;
         const index = std.mem.indexOf(u8, path, self.prefix);
@@ -403,7 +403,7 @@ pub const FileServer = struct {
         self.dir.close();
     }
 
-    pub fn handle(ctx: ?*anyopaque, res: *Response, req: *const Request) !void {
+    fn handle(ctx: ?*anyopaque, res: *Response, req: *const Request) !void {
         const self: *FileServer = @ptrCast(@alignCast(ctx.?));
         const path = Path{
             .path = req.url.path().path[1..], // remove the beginning /

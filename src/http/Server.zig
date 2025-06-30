@@ -64,8 +64,6 @@ pub fn listen(self: *Server, router: *http.Router) !void {
     }
 }
 
-const response_fmt = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{s}";
-const resource_not_found = "HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n";
 fn handleClient(self: *Server, client: *http.Client) !void {
     defer client.deinit();
     log.info("connected to {}", .{client.addr});
@@ -87,10 +85,13 @@ fn handleClient(self: *Server, client: *http.Client) !void {
 
     const req = try http.parser.parseRequest(self, msg, alloc);
 
-    var res: http.Response = undefined;
-    res.arena = alloc;
-    res.body = "";
-    res.headers = .init(alloc);
+    var res = http.Response{
+        .arena = alloc,
+        .body = "",
+        .headers = .init(alloc),
+        .protocol = .http11,
+        .status_code = .ok,
+    };
     try self.router.dispatch(&res, &req);
     if (!res.headers.contains("Content-Length") and res.body.len > 0) {
         const len = try std.fmt.allocPrint(alloc, "{}", .{res.body.len});

@@ -17,29 +17,19 @@ cookies
 rss reader
 unix processes
 
-src/main.zig
-    const x = 0;
-    _ = x; // autofix
-
-
 Next up:
-    write a server that can send over the contents of a requested file
-    be able to setup handlers, routers, etc
-    figure out how go's HttpMux works and implement it yourself
-    write a response and request struct and add an easy way to 
-    write headers, status codes, body stuff and more
+    -- write a server that can send over the contents of a requested file
+    -- be able to setup handlers, routers, etc
+    -- figure out how go's HttpMux works and implement it yourself
+    -- write a response and request struct and add an easy way to 
+    -- write headers, status codes, body stuff and more
     try figuring out how curl works
 
 Be able to parse GET and POST requests
     -- Parse the first line to determine verison, method, status code, etc
-    - Parse headers and put them in a map
-    - Parse the body using Content-Length
-    try writeAll(socket, msg);
-    - Figure out how to read from the socket
-
-http uses \r\n as a delimiter for headers and a Content-Length header prefix for the body
-create a reader struct that reads a full http message and returns it
-wrapped in a request struct. it should keep the rest of the message in a buffer
+    -- Parse headers and put them in a map
+    -- Parse the body using Content-Length
+    -- Figure out how to read from the socket
 
 GOAL:
     be able to create a blog website where i can add markdown
@@ -88,21 +78,16 @@ TOMORROW:
     -- add a handler / router
         -- automatically create the Content-Length header
         -- figure out how to handle routes like /api/user/{id}
+
     make isPrefixOf and findBestRoute better. they are really inefficient and dirty
     fix up the dirty code in FileServer and StripPrefix, some repeated stuff, etc
         just go through it
 
-    add a tagged union to FileServer that lets it configure what files
-        to allow better. for example there should be a field called
-        allow_only which is a []const []const u8
-        or a field called exclude
-        these should not be specific files but rather patterns
-        to follow. for example allow_only could include something
-        like *.html and test.js
-
     create a web page with a form, image, etc
 
-    add checks for Responses, make sure they contain valid headers, etc
+    add checks for Responses
+        valid headers
+        status code
 
     add more tests for parsing
     a client that can make requests a server
@@ -110,17 +95,6 @@ TOMORROW:
         use this to test functions that require sockets
     maybe this is possible in the normal testing stuff
 
-
-GET /index.html HTTP/1.1\r\n
-Host: www.example.com\r\n
-User-Agent: Mozilla/5.0\r\n
-Accept: text/html\r\n
-Connection: close\r\n
-\r\n
-
-a full message is when a \r\n\r\n pattern is encountered
-in the unprocessed buffer. if that pattern is found
-and there is no Content-Length header then return only that
-if there is a Content-Length header then read that many bytes
-from the socket
+    concurrency
+        spawn a new thread for each client / handler
 

@@ -1,0 +1,72 @@
+/* Base styles */
+body {
+    font-family: 'Segoe UI', Roboto, sans-serif;
+    background-color: #0f0f0f;
+    color: #e5e5e5;
+    margin: 0;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* Image styling */
+img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+    margin-bottom: 2rem;
+}
+
+/* Form container */
+form {
+    background-color: #1a1a1a;
+    padding: 2rem;
+    border-radius: 12px;
+    box-shadow: 0 0 16px rgba(0, 0, 0, 0.4);
+    max-width: 400px;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Label styling */
+label {
+    margin-bottom: 0.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+/* Input styling */
+input[type="text"] {
+    padding: 0.75rem;
+    border: none;
+    border-radius: 8px;
+    background-color: #2b2b2b;
+    color: #fff;
+    margin-bottom: 1.5rem;
+    font-size: 1rem;
+    transition: background-color 0.2s;
+}
+
+input[type="text"]:focus {
+    outline: none;
+    background-color: #333;
+}
+
+/* Button styling */
+button {
+    padding: 0.75rem;
+    font-size: 1rem;
+    background-color: #0077ff;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+button:hover {
+    background-color: #005fcb;
+}
