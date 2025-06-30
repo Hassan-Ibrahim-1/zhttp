@@ -354,7 +354,8 @@ pub const FileServer = struct {
         };
     }
 
-    pub fn deinit(self: *FileServer) void {
+    fn deinit(ctx: ?*anyopaque) void {
+        const self: *FileServer = @ptrCast(@alignCast(ctx.?));
         self.dir.close();
     }
 
@@ -392,6 +393,7 @@ pub const FileServer = struct {
             .ptr = self,
             .vtable = &.{
                 .handle = handle,
+                .deinit = deinit,
             },
         };
     }

@@ -22,8 +22,16 @@ pub fn init(alloc: Allocator) Router {
 }
 
 pub fn deinit(self: *Router) void {
-    self.handlers.deinit();
+    self.deinitHandlers();
     self.arena.deinit();
+}
+
+fn deinitHandlers(self: *Router) void {
+    var iter = self.handlers.valueIterator();
+    while (iter.next()) |handler| {
+        handler.deinit();
+    }
+    self.handlers.deinit();
 }
 
 /// if the same route is registered twice, only the first one is used
@@ -38,12 +46,20 @@ pub fn handle(
 pub fn handleFn(
     self: *Router,
     route: []const u8,
-    comptime func: Handler.HandleFn,
+    comptime func: *const fn (
+        res: *Response,
+        req: *const Request,
+    ) anyerror!void,
 ) void {
+    const T = struct {
+        fn callHandler(_: ?*anyopaque, res: *Response, req: *const Request) !void {
+            return func(res, req);
+        }
+    };
     self.tryHandle(route, .{
         .ptr = null,
         .vtable = &.{
-            .handle = func,
+            .handle = T.callHandler,
         },
     }) catch unreachable;
 }

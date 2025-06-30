@@ -18,19 +18,17 @@ pub fn main() !void {
     router.handleFn("/", index);
 
     var fs = try http.FileServer.init("res/");
-    defer fs.deinit();
 
     var sp = http.StripPrefix{
         .prefix = "/res/",
         .underlying = fs.handler(),
     };
-
     router.handle("/res/", sp.handler());
 
     try server.listen(&router);
 }
 
-fn index(_: ?*anyopaque, res: *http.Response, req: *const http.Request) !void {
+fn index(res: *http.Response, req: *const http.Request) !void {
     const p = req.url.path();
     if (!p.eql("/index.html") and !p.eql("/")) {
         return http.notFound(res, p.path);

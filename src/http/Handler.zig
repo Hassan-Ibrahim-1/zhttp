@@ -17,6 +17,7 @@ vtable: *const VTable,
 
 pub const VTable = struct {
     handle: HandleFn,
+    deinit: ?*const fn (ctx: ?*anyopaque) void = null,
 };
 
 pub fn from(comptime func: HandleFn) Handler {
@@ -34,4 +35,10 @@ pub fn handle(
     req: *const Request,
 ) !void {
     return self.vtable.handle(self.ptr, res, req);
+}
+
+pub fn deinit(self: Handler) void {
+    if (self.vtable.deinit) |f| {
+        f(self.ptr);
+    }
 }
