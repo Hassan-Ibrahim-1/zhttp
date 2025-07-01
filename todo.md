@@ -76,6 +76,15 @@ TOMORROW:
             the entire thing should take at most 2 seconds to finish, it should not compound
             mocking would be great for this but get some basic concurrency done first
 
+        design:
+            store an ArrayList(posix.pollf)
+            first one should always be the listening socket
+            use poll on that array list and update each socket accordingly
+            threads...
+                threads are expensive
+                only one thread can write / read from a single socket
+            switch to epoll / kqueue later if performance becomes a problem
+
     a client that can make requests a server
     a mocking library that can spin up a server and client.
         use this to test functions that require sockets
