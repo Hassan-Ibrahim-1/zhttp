@@ -1,4 +1,5 @@
 const std = @import("std");
+
 const http = @import("http/http.zig");
 
 pub fn main() !void {
@@ -11,6 +12,9 @@ pub fn main() !void {
         server.close();
         server.deinit();
     }
+
+    const m = std.heap.MemoryPool(http.Request).init(alloc);
+    _ = m; // autofix
 
     std.log.info("listening on {}", .{server.address});
 
