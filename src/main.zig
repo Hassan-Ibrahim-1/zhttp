@@ -28,6 +28,7 @@ pub fn main() !void {
         .underlying = fs.handler(),
     };
     router.handle("/res/", sp.handler());
+    router.handleFn("/submit-form", submitForm);
 
     try server.listen(&router);
 }
@@ -43,8 +44,15 @@ fn index(res: *http.Response, req: *const http.Request) !void {
 }
 
 fn submitForm(res: *http.Response, req: *const http.Request) !void {
-    _ = res; // autofix
-    _ = req; // autofix
+    if (req.method != .post) {
+        return http.notFound(res, req.url.path().path);
+    }
+    try res.headers.put("Content-Type", "application/json");
+    res.body = try std.json.stringifyAlloc(
+        res.arena,
+        .{ .got = req.body, .msg = "hey" },
+        .{},
+    );
 }
 
 test {

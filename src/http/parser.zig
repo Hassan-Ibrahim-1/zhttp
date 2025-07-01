@@ -91,6 +91,29 @@ pub fn parseHeader(
     };
 }
 
+pub fn isValidHeader(key: []const u8, val: []const u8) bool {
+    if (key.len == 0) return false;
+    for (key) |ch| {
+        if (!validHeaderKeyChar(ch)) return false;
+    }
+    for (val) |ch| {
+        if (!validHeaderValueChar(ch)) return false;
+    }
+    return true;
+}
+
+fn validHeaderKeyChar(ch: u8) bool {
+    return !std.ascii.isControl(ch) and ch != ':' and
+        !std.ascii.isWhitespace(ch) and ch != '@';
+}
+
+fn validHeaderValueChar(ch: u8) bool {
+    if (std.ascii.isControl(ch)) {
+        if (ch != '\t') return false;
+    }
+    return true;
+}
+
 test parseRequest {
     // GET /static/image.png HTTP/1.1
     // Host: www.example.com
@@ -171,4 +194,87 @@ test parseHeader {
 
     const err = parseHeader(alloc, "Host:www.example.com");
     try std.testing.expectError(error.InvalidHeader, err);
+}
+
+test isValidHeader {
+    const Test = struct {
+        header: []const u8,
+        expected: bool,
+    };
+    const tests = [_]Test{
+        .{
+            .header = "Host: example.com",
+            .expected = true,
+        },
+        .{
+            .header = "User-Agent: curl/7.68.0",
+            .expected = true,
+        },
+        .{
+            .header = "X-Custom-Header_123: abcDEF-456_xyz",
+            .expected = true,
+        },
+        .{
+            .header = "Accept-Encoding: gzip, deflate",
+            .expected = true,
+        },
+        .{
+            .header = "X-Token: !#$%&'*+-.^_`|~",
+            .expected = true,
+        },
+        .{
+            .header = "Authorization: Bearer abc.def.ghi",
+            .expected = true,
+        },
+        .{
+            .header = "Invalid Header: value", // space in key
+            .expected = false,
+        },
+        .{
+            .header = "User@Agent: curl", // invalid char '@'
+            .expected = false,
+        },
+        .{
+            .header = "Content-Type: text/html\ntext/plain", // newline in value
+            .expected = false,
+        },
+        .{
+            .header = ": no-key", // empty key
+            .expected = false,
+        },
+        .{
+            .header = " X-Key: value", // space before key
+            .expected = false,
+        },
+        .{
+            .header = "Key : value", // space before colon
+            .expected = false,
+        },
+        .{
+            .header = "Key: value\x00withnull", // null byte
+            .expected = false,
+        },
+        .{
+            .header = "Key: value\x1F", // control character
+            .expected = false,
+        },
+    };
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    for (&tests) |*t| {
+        const header = http.parser.parseHeader(alloc, t.header) catch |err| {
+            std.debug.print("parse header failed\n", .{});
+            return err;
+        };
+        errdefer std.debug.print(
+            "[{s}] got={} expected={}\n",
+            .{ t.header, isValidHeader(header.key, header.value), t.expected },
+        );
+        try std.testing.expect(
+            isValidHeader(header.key, header.value) == t.expected,
+        );
+    }
 }

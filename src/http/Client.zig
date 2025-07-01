@@ -39,6 +39,7 @@ pub fn init(
 
 pub fn deinit(self: *Client) void {
     posix.close(self.socket);
+    std.Thread.Mutex
 }
 
 pub fn reader(self: *Client, alloc: Allocator) Allocator.Error!http.HttpReader {

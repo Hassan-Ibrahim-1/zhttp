@@ -203,8 +203,6 @@ pub const HttpReader = struct {
             try self.ensureSpace(512);
         }
 
-        const buf = self.buf.items[0..self.buf.items.len];
-        _ = buf; // autofix
         while (true) {
             if (try self.bufferedMessage()) |msg| {
                 return alloc.dupe(u8, msg);

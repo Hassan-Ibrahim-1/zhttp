@@ -98,8 +98,22 @@ fn handleClient(self: *Server, client: *http.Client) !void {
         try res.headers.put("Content-Length", len);
     }
 
+    try validateHeaders(&res);
+
     const res_str = try std.fmt.allocPrint(alloc, "{}", .{res});
     try writeAll(client.socket, res_str);
+}
+
+fn validateHeaders(res: *const http.Response) !void {
+    var iter = res.headers.iterator();
+    while (iter.next()) |kv| {
+        const k = kv.key_ptr.*;
+        const v = kv.value_ptr.*;
+        if (!http.parser.isValidHeader(k, v)) {
+            log.err("{s}: {s} is not a valid header", .{ k, v });
+            return error.InvalidHeader;
+        }
+    }
 }
 
 /// reads from the socket
