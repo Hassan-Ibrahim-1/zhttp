@@ -35,9 +35,8 @@ fn index(res: *http.Response, req: *const http.Request) !void {
         return http.notFound(res, p.path);
     }
     res.status_code = .ok;
-    try res.headers.put("Content@Type", "text/html");
+    try res.headers.put("Content-Type", "text/html");
     try http.serveFile(res, "res/index.html");
-    std.enums.EnumSet(u32);
 }
 
 fn submitForm(res: *http.Response, req: *const http.Request) !void {
