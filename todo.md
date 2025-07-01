@@ -63,38 +63,24 @@ GOAL:
         - changing font
 
 TOMORROW:
-    -- finish parsing headers
-    -- respond to a basic get request, ignore any body
-    -- read http body in HttpReader using the Content-Length header
-    -- parse body
-    -- url parsing
-    -- be able to accept post requests from stuff like forms
-    -- write a format function for Request that can reproduce the exact request that was sent by the client.
-    got error.WouldBlock when sending a request back after the button was pressed
-    
-    -- get started on responses - should be way easier
-    -- write a format function that constructs a valid http response
-
-    -- add a handler / router
-        -- automatically create the Content-Length header
-        -- figure out how to handle routes like /api/user/{id}
-
     make isPrefixOf and findBestRoute better. they are really inefficient and dirty
     fix up the dirty code in FileServer and StripPrefix, some repeated stuff, etc
         just go through it
 
-    create a web page with a form, image, etc
+    concurrency
+        this is big
+        
+        how to test this:
+            connect multiple clients to the server. each sends a request to the server
+            have the server wait for at most 2 seconds max before responding with some basic json
+            the entire thing should take at most 2 seconds to finish, it should not compound
+            mocking would be great for this but get some basic concurrency done first
 
-    add checks for Responses
-        valid headers
-        status code
-
-    add more tests for parsing
     a client that can make requests a server
     a mocking library that can spin up a server and client.
         use this to test functions that require sockets
     maybe this is possible in the normal testing stuff
 
-    concurrency
-        spawn a new thread for each client / handler
+    add more tests for parsing
+
 
