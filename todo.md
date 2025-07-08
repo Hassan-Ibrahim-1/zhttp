@@ -77,13 +77,13 @@ TOMORROW:
             mocking would be great for this but get some basic concurrency done first
 
         design:
-            store an ArrayList(posix.pollf)
-            first one should always be the listening socket
-            use poll on that array list and update each socket accordingly
+            this is really confusing - stop reading so much and just implement
+                do go through the book on semaphores though at some point
+            epoll / kqueue backend for async io
             threads...
+                figure out an efficient version of std.Thread.Pool.
                 threads are expensive
                 only one thread can write / read from a single socket
-            switch to epoll / kqueue later if performance becomes a problem
 
         this is just the producer consumer problem
             have a thread read http requests from clients and put
@@ -104,5 +104,6 @@ TOMORROW:
     maybe this is possible in the normal testing stuff
 
     add more tests for parsing
-
+    add more tests in general, isolate stuff that can be isolated
+        end to end tests using the mocking library i'll eventually write
 
