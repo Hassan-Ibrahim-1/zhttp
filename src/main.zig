@@ -13,9 +13,6 @@ pub fn main() !void {
         server.deinit();
     }
 
-    const m = std.heap.MemoryPool(http.Request).init(alloc);
-    _ = m; // autofix
-
     std.log.info("listening on {}", .{server.address});
 
     var router = http.Router.init(server.alloc);

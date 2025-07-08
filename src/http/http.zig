@@ -253,7 +253,6 @@ pub const HttpReader = struct {
         std.debug.assert(pos >= start);
         const unprocessed = buf[start..pos];
         const index = std.mem.indexOf(u8, unprocessed, "\r\n\r\n");
-        // FIXME: incomplete, should account for an http body
         if (index) |i| {
             self.start += i + 4;
             return try self.extractBody(start);
@@ -298,6 +297,7 @@ pub fn notFound(res: *Response, path: []const u8) !void {
     );
 }
 
+/// the '.' is not included
 fn fileExtension(f: []const u8) ?[]const u8 {
     var iter = std.mem.splitBackwardsScalar(u8, f, '.');
     return iter.next();
@@ -324,6 +324,8 @@ fn fileExtension(f: []const u8) ?[]const u8 {
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
+///
+/// this function was taken from https://github.com/mattnite/glob
 fn matchFilePattern(pattern: []const u8, name: []const u8) bool {
     if (std.mem.eql(u8, pattern, "*")) return true;
 

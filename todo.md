@@ -85,6 +85,19 @@ TOMORROW:
                 only one thread can write / read from a single socket
             switch to epoll / kqueue later if performance becomes a problem
 
+        this is just the producer consumer problem
+            have a thread read http requests from clients and put
+            them in a request queue.
+            then have n worker threads go through the request queue
+            and process those requests and generate responses
+    
+            i still need to figure out how to read and write messages
+            should it be done via multiple threads, like multiple threads
+            can read messages from clients while other threads can
+            simultaneously write to those clients
+            or should the main thread be the only one allowed to 
+            interface with clients at all
+
     a client that can make requests a server
     a mocking library that can spin up a server and client.
         use this to test functions that require sockets
