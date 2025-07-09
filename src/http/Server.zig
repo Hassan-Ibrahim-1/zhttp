@@ -73,7 +73,7 @@ pub fn listen(self: *Server, router: *http.Router) !void {
                         listener,
                         &client_address.any,
                         &client_address_len,
-                        0,
+                        posix.SOCK.NONBLOCK,
                     ) catch |err| {
                         log.err("error accept: {}\n", .{err});
                         continue;
@@ -87,6 +87,12 @@ pub fn listen(self: *Server, router: *http.Router) !void {
                         log.err("client failed: {}", .{err});
                     };
                 },
+                .read => |client| {
+                    log.info("read event", .{});
+                    self.handleClient(client) catch |err| {
+                        log.err("client failed: {}", .{err});
+                    };
+                },
                 else => {
                     log.info("recieved a different event type: {s}", .{@tagName(ev)});
                 },
@@ -96,20 +102,30 @@ pub fn listen(self: *Server, router: *http.Router) !void {
 }
 
 fn handleClient(self: *Server, client: *Client) !void {
-    defer client.deinit();
     log.info("connected to {}", .{client.addr});
 
     const alloc = client.arena.allocator();
 
     const reader = &client.reader;
 
-    const msg = reader.readMessage(self.alloc) catch |err| {
-        log.err(
-            "failed to read message from {}. reason: {}",
-            .{ client.addr, err },
-        );
-        return err;
+    const msg = reader.readMessage(alloc) catch |err| switch (err) {
+        error.WouldBlock => {
+            log.info("would block so returning early", .{});
+            return;
+        },
+        else => {
+            log.err(
+                "failed to read message from {}. reason: {}",
+                .{ client.addr, err },
+            );
+            client.deinit();
+            return err;
+        },
     };
+
+    defer client.deinit();
+
+    log.info("fully read message", .{});
 
     const req = try http.parser.parseRequest(self, msg, alloc);
 

@@ -118,3 +118,16 @@ TOMORROW:
     add more tests in general, isolate stuff that can be isolated
         end to end tests using the mocking library i'll eventually write
 
+
+Problem:
+    error.WouldBlock is returned by HttpReader
+    but for some reason it doesn't read after two blocks
+    fix this so that reads can be done asynchronously
+    
+    after this start working on making handlers multithreaded
+        after the handler generates a response, router.dispatch
+        should set clients mode to write.
+        the main loop will then write to the client and decide if it should
+        stay open or be set back to read mode. maybe setting it back to read
+        mode can be done the client itself after being done with writing the response
+        the response string will need a buffer though which be stored by the client
