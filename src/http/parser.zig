@@ -130,6 +130,7 @@ test parseRequest {
 
     const host = "127.0.0.1";
     var server = try http.Server.init(std.testing.allocator, host, 8080);
+    defer server.event_loop.deinit();
 
     var arena = std.heap.ArenaAllocator.init(server.alloc);
     defer arena.deinit();

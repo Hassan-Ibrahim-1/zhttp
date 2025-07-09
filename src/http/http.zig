@@ -11,6 +11,7 @@ pub const Router = @import("Router.zig");
 pub const Server = @import("Server.zig");
 pub const Handler = @import("Handler.zig");
 pub const Mime = @import("mime.zig").Mime;
+pub const io = @import("io/io.zig");
 
 const log = std.log.scoped(.http);
 

@@ -98,6 +98,17 @@ TOMORROW:
             or should the main thread be the only one allowed to 
             interface with clients at all
 
+
+            main thread reads from a socket and parses the request
+            dispatch that request to a handler that runs in a worker thread (this is where a queue comes in)
+            the worker thread then updates the client to poll for writes and the main thread then writes the
+            response to the client
+
+            the dispatching part can be optimized so that if the resource is a static resource like for a fileserver
+            then just call the handler on the main thread. investigate this at some point
+
+            for read to be done in the main thread thttp.HttpReader would also have to be non blocking
+
     a client that can make requests a server
     a mocking library that can spin up a server and client.
         use this to test functions that require sockets
