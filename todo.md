@@ -124,13 +124,12 @@ TOMORROW:
     server should be able to respond to Expect headers
 
 
-Problem:
+# NEXT:
     -- async http reader
-    async http writer
+    -- async http writer
 
-    after this start working on making handlers multithreaded
-        after the handler generates a response, router.dispatch
-        should set clients mode to write.
+    multithreaded handlers
+        after the handler generates a response, router.dispatch should set clients mode to write.
         the main loop will then write to the client and decide if it should
         stay open or be set back to read mode. maybe setting it back to read
         mode can be done the client itself after being done with writing the response
