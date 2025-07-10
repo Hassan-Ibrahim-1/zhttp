@@ -11,6 +11,7 @@ const Client = @This();
 arena: *std.heap.ArenaAllocator,
 addr: net.Address,
 socket: posix.socket_t,
+socket_mu: std.Thread.Mutex = .{},
 res: http.Response,
 reader: http.HttpReader,
 writer: http.HttpWriter,
@@ -49,6 +50,7 @@ pub fn init(
             .protocol = .http11,
             .status_code = .ok,
         },
+        .socket_mu = .{},
         .reader = http.HttpReader.init(arena.allocator(), socket),
         .writer = .{
             .buf = "",
@@ -63,5 +65,7 @@ pub fn deinit(self: *Client) void {
     self.arena.deinit();
     alloc.destroy(self.arena);
 
+    self.socket_mu.lock();
+    defer self.socket_mu.unlock();
     posix.close(self.socket);
 }

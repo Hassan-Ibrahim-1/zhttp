@@ -1,4 +1,5 @@
 const std = @import("std");
+const log = std.log;
 
 const http = @import("http/http.zig");
 
@@ -39,6 +40,7 @@ fn index(res: *http.Response, req: *const http.Request) !void {
     res.status_code = .ok;
     try res.headers.put("Content-Type", "text/html");
     try http.serveFile(res, "res/index.html");
+    log.info("served /", .{});
 }
 
 fn submitForm(res: *http.Response, req: *const http.Request) !void {

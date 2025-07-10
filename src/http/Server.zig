@@ -19,6 +19,8 @@ router: *http.Router,
 event_loop: io.EventLoop,
 event_loop_mu: std.Thread.Mutex,
 
+scheduler: io.Scheduler,
+
 pub fn init(alloc: Allocator, host: []const u8, port: u16) !Server {
     const addr = try net.Address.parseIp(host, port);
     return Server{
@@ -29,6 +31,7 @@ pub fn init(alloc: Allocator, host: []const u8, port: u16) !Server {
         .router = undefined,
         .event_loop = try io.EventLoop.init(),
         .event_loop_mu = .{},
+        .scheduler = .init(alloc, dispatchClient),
     };
 }
 
@@ -37,6 +40,7 @@ pub fn deinit(self: *Server) void {
         @panic("Close the server before calling deinit");
     }
     self.event_loop.deinit();
+    self.scheduler.deinit();
     self.router.deinit();
 }
 
@@ -77,10 +81,10 @@ pub fn listen(self: *Server, router: *http.Router) !void {
     var mem_pool = std.heap.MemoryPool(Client).init(self.alloc);
     defer mem_pool.deinit();
 
+    try self.scheduler.start();
+
     while (true) {
         var iter = it: {
-            self.event_loop_mu.lock();
-            defer self.event_loop_mu.unlock();
             break :it self.event_loop.wait();
         };
 
@@ -103,8 +107,6 @@ pub fn listen(self: *Server, router: *http.Router) !void {
 
                     log.info("connected to {}", .{client_address});
 
-                    self.event_loop_mu.lock();
-                    defer self.event_loop_mu.unlock();
                     try self.event_loop.newClient(client);
                 },
                 .read => |client| {
@@ -127,7 +129,12 @@ pub fn listen(self: *Server, router: *http.Router) !void {
                     const req = try alloc.create(http.Request);
                     // TODO: parser.parseRequest should return a pointer
                     req.* = try http.parser.parseRequest(self, msg, alloc);
-                    // dispatch
+
+                    try self.scheduler.schedule(.{
+                        .server = self,
+                        .client = client,
+                        .req = req,
+                    });
                 },
                 .write => |client| {
                     client.writer.write() catch |err| {
@@ -147,13 +154,11 @@ fn dispatchClient(
     client: *Client,
     req: *const http.Request,
 ) void {
+    const alloc = client.arena.allocator();
     self.router.dispatch(&client.res, req) catch |err| {
         clientDispatchError(req.url.path.str, client.addr, err);
         return;
     };
-
-    const alloc = client.arena.allocator();
-    try self.router.dispatch(&client.res, &req);
     if (!client.res.headers.contains("Content-Length") and client.res.body.len > 0) {
         const len = std.fmt.allocPrint(alloc, "{}", .{client.res.body.len}) catch |err| {
             clientDispatchError(req.url.path.str, client.addr, err);
@@ -176,8 +181,6 @@ fn dispatchClient(
     };
     client.writer.buf = res_str;
 
-    self.event_loop_mu.lock();
-    defer self.event_loop_mu.unlock();
     self.event_loop.setIoMode(client, .write) catch |err| {
         clientDispatchError(req.url.path.str, client.addr, err);
     };

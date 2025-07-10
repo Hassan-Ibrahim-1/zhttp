@@ -4,6 +4,7 @@ const posix = std.posix;
 const builtin = @import("builtin");
 
 const http = @import("../http.zig");
+pub const Scheduler = @import("Scheduler.zig");
 
 pub const EventLoop = struct {
     impl: Impl,
@@ -115,6 +116,8 @@ const Epoll = struct {
             .events = linux.POLL.IN,
             .data = .{ .ptr = @intFromPtr(client) },
         };
+        client.socket_mu.lock();
+        defer client.socket_mu.unlock();
         try posix.epoll_ctl(
             self.efd,
             linux.EPOLL.CTL_ADD,
@@ -131,6 +134,9 @@ const Epoll = struct {
             },
             .data = .{ .ptr = @intFromPtr(client) },
         };
+
+        client.socket_mu.lock();
+        defer client.socket_mu.unlock();
         try posix.epoll_ctl(
             self.efd,
             linux.EPOLL.CTL_MOD,
