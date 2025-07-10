@@ -28,6 +28,7 @@ pub fn main() !void {
     router.handle("/res/", sp.handler());
     router.handleFn("/submit-form", submitForm);
     router.handleFn("/file", file);
+    router.handleFn("/lorem", lorem);
 
     try server.listen(&router);
 }
@@ -61,6 +62,15 @@ fn file(res: *http.Response, req: *const http.Request) !void {
     }
     try res.headers.put("Content-Type", req.headers.get("Content-Type").?);
     res.body = req.body;
+}
+
+fn lorem(res: *http.Response, req: *const http.Request) !void {
+    if (req.method != .get) {
+        return http.notFound(res, req.url.path.str);
+    }
+    try res.headers.put("Content-Type", "text/plain");
+    try http.serveFile(res, "res/lorem.html");
+    log.info("served /lorem.html", .{});
 }
 
 test {
