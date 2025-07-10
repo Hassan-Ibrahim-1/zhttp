@@ -7,11 +7,13 @@ const http = @import("../http.zig");
 pub const Scheduler = @import("Scheduler.zig");
 
 pub const EventLoop = struct {
+    mu: std.Thread.Mutex,
     impl: Impl,
 
     pub fn init() !EventLoop {
         return .{
             .impl = try Impl.init(),
+            .mu = .{},
         };
     }
 
@@ -36,6 +38,9 @@ pub const EventLoop = struct {
     }
 
     pub fn setIoMode(self: *EventLoop, client: *http.Client, mode: Mode) !void {
+        self.mu.lock();
+        defer self.mu.unlock();
+
         try self.impl.setIoMode(client, mode);
     }
 };
@@ -116,8 +121,6 @@ const Epoll = struct {
             .events = linux.POLL.IN,
             .data = .{ .ptr = @intFromPtr(client) },
         };
-        client.socket_mu.lock();
-        defer client.socket_mu.unlock();
         try posix.epoll_ctl(
             self.efd,
             linux.EPOLL.CTL_ADD,
@@ -127,6 +130,9 @@ const Epoll = struct {
     }
 
     fn setIoMode(self: *Epoll, client: *http.Client, mode: Mode) !void {
+        std.debug.assert(client.io_mode != mode);
+        client.io_mode = mode;
+
         var event = linux.epoll_event{
             .events = switch (mode) {
                 .read => linux.POLL.IN,
@@ -135,8 +141,6 @@ const Epoll = struct {
             .data = .{ .ptr = @intFromPtr(client) },
         };
 
-        client.socket_mu.lock();
-        defer client.socket_mu.unlock();
         try posix.epoll_ctl(
             self.efd,
             linux.EPOLL.CTL_MOD,

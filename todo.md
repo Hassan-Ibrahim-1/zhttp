@@ -79,38 +79,6 @@ TOMORROW:
             the entire thing should take at most 2 seconds to finish, it should not compound
             mocking would be great for this but get some basic concurrency done first
 
-        design:
-            this is really confusing - stop reading so much and just implement
-                do go through the book on semaphores though at some point
-            epoll / kqueue backend for async io
-            threads...
-                figure out an efficient version of std.Thread.Pool.
-                threads are expensive
-                only one thread can write / read from a single socket
-
-        this is just the producer consumer problem
-            have a thread read http requests from clients and put
-            them in a request queue.
-            then have n worker threads go through the request queue
-            and process those requests and generate responses
-    
-            i still need to figure out how to read and write messages
-            should it be done via multiple threads, like multiple threads
-            can read messages from clients while other threads can
-            simultaneously write to those clients
-            or should the main thread be the only one allowed to 
-            interface with clients at all
-
-            main thread reads from a socket and parses the request
-            dispatch that request to a handler that runs in a worker thread (this is where a queue comes in)
-            the worker thread then updates the client to poll for writes and the main thread then writes the
-            response to the client
-
-            the dispatching part can be optimized so that if the resource is a static resource like for a fileserver
-            then just call the handler on the main thread. investigate this at some point
-
-            for read to be done in the main thread thttp.HttpReader would also have to be non blocking
-
     a client that can make requests a server
     a mocking library that can spin up a server and client.
         use this to test functions that require sockets
@@ -125,15 +93,7 @@ TOMORROW:
     because of this.
     
     server should be able to respond to Expect headers
+    
+    implement RFC properly. i have basic http done but things like
+    Connection: keep-alive, Expect: 100-Continue, are not handled properly
 
-
-# NEXT:
-    -- async http reader
-    -- async http writer
-
-    multithreaded handlers
-        after the handler generates a response, router.dispatch should set clients mode to write.
-        the main loop will then write to the client and decide if it should
-        stay open or be set back to read mode. maybe setting it back to read
-        mode can be done the client itself after being done with writing the response
-        the response string will need a buffer though which be stored by the client

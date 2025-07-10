@@ -41,7 +41,6 @@ fn index(res: *http.Response, req: *const http.Request) !void {
     res.status_code = .ok;
     try res.headers.put("Content-Type", "text/html");
     try http.serveFile(res, "res/index.html");
-    log.info("served /", .{});
 }
 
 fn submitForm(res: *http.Response, req: *const http.Request) !void {
@@ -68,9 +67,8 @@ fn lorem(res: *http.Response, req: *const http.Request) !void {
     if (req.method != .get) {
         return http.notFound(res, req.url.path.str);
     }
-    try res.headers.put("Content-Type", "text/plain");
+    try res.headers.put("Content-Type", "text/html");
     try http.serveFile(res, "res/lorem.html");
-    log.info("served /lorem.html", .{});
 }
 
 test {

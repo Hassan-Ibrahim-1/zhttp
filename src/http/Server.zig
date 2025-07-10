@@ -11,7 +11,7 @@ const io = http.io;
 const Server = @This();
 
 alloc: Allocator,
-address: std.net.Address,
+address: net.Address,
 host: []const u8,
 listener: ?posix.socket_t,
 router: *http.Router,
@@ -105,7 +105,7 @@ pub fn listen(self: *Server, router: *http.Router) !void {
                     const client: *Client = try mem_pool.create();
                     client.* = try .init(self.alloc, client_address, socket);
 
-                    log.info("connected to {}", .{client_address});
+                    // log.info("connected to {}", .{client_address});
 
                     try self.event_loop.newClient(client);
                 },
@@ -120,7 +120,8 @@ pub fn listen(self: *Server, router: *http.Router) !void {
                                 "failed to read message from {}. reason: {}",
                                 .{ client.addr, err },
                             );
-                            client.deinit();
+                            log.info("{} deinit in read", .{client.addr});
+                            try self.removeClient(client);
                             clientError(err);
                             continue;
                         },
@@ -142,7 +143,8 @@ pub fn listen(self: *Server, router: *http.Router) !void {
                             continue;
                         } else clientError(err);
                     };
-                    client.deinit();
+                    log.info("{} deinit in write", .{client.addr});
+                    try self.removeClient(client);
                 },
             }
         }
@@ -155,6 +157,7 @@ fn dispatchClient(
     req: *const http.Request,
 ) void {
     const alloc = client.arena.allocator();
+    std.debug.assert(client.valid);
     self.router.dispatch(&client.res, req) catch |err| {
         clientDispatchError(req.url.path.str, client.addr, err);
         return;
@@ -184,6 +187,11 @@ fn dispatchClient(
     self.event_loop.setIoMode(client, .write) catch |err| {
         clientDispatchError(req.url.path.str, client.addr, err);
     };
+}
+
+fn removeClient(self: *Server, client: *Client) !void {
+    try self.scheduler.unscheduleClient(client);
+    client.deinit();
 }
 
 fn clientDispatchError(
