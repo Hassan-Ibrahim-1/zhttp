@@ -32,9 +32,9 @@ pub fn main() !void {
 }
 
 fn index(res: *http.Response, req: *const http.Request) !void {
-    const p = req.url.path();
+    const p = req.url.path;
     if (!p.eql("/index.html") and !p.eql("/")) {
-        return http.notFound(res, p.path);
+        return http.notFound(res, p.str);
     }
     res.status_code = .ok;
     try res.headers.put("Content-Type", "text/html");
@@ -43,7 +43,7 @@ fn index(res: *http.Response, req: *const http.Request) !void {
 
 fn submitForm(res: *http.Response, req: *const http.Request) !void {
     if (req.method != .post) {
-        return http.notFound(res, req.url.path().path);
+        return http.notFound(res, req.url.path.str);
     }
     try res.headers.put("Content-Type", "application/json");
     res.body = try std.json.stringifyAlloc(
@@ -55,7 +55,7 @@ fn submitForm(res: *http.Response, req: *const http.Request) !void {
 
 fn file(res: *http.Response, req: *const http.Request) !void {
     if (req.method != .post) {
-        return http.notFound(res, req.url.path().path);
+        return http.notFound(res, req.url.path.str);
     }
     try res.headers.put("Content-Type", req.headers.get("Content-Type").?);
     res.body = req.body;

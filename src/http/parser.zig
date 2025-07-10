@@ -142,7 +142,7 @@ test parseRequest {
 
     try std.testing.expect(req.method == .get);
     try std.testing.expect(req.protocol == .http11);
-    try std.testing.expect(req.url.path().eql("/static/image.png"));
+    try std.testing.expect(req.url.path.eql("/static/image.png"));
 
     const headers = &req.headers;
     try std.testing.expect(expected_headers.keys().len == headers.count());

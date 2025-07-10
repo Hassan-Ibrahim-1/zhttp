@@ -66,14 +66,14 @@ pub const Protocol = enum {
 
 /// small wrapper around a path for convenience
 pub const Path = struct {
-    path: []const u8,
+    str: []const u8,
 
     pub fn eql(self: Path, other: []const u8) bool {
-        return std.mem.eql(u8, self.path, other);
+        return std.mem.eql(u8, self.str, other);
     }
 
     pub fn exists(self: Path) bool {
-        std.fs.cwd().access(self.path, .{}) catch |err| {
+        std.fs.cwd().access(self.str, .{}) catch |err| {
             switch (err) {
                 error.FileNotFound,
                 error.NameTooLong,
@@ -88,7 +88,7 @@ pub const Path = struct {
     }
 
     pub fn kind(self: Path) std.fs.Dir.StatFileError!std.fs.File.Kind {
-        const stat = std.fs.cwd().statFile(self.path) catch unreachable;
+        const stat = std.fs.cwd().statFile(self.str) catch unreachable;
         return stat.kind;
     }
 };
@@ -98,6 +98,7 @@ pub const UrlParseError = std.fmt.BufPrintError || Allocator.Error;
 pub const Url = struct {
     /// this must always be an absolute url
     raw: []const u8,
+    path: Path,
 
     /// hst must not contain an ending /
     /// relative must start with a /
@@ -134,10 +135,11 @@ pub const Url = struct {
 
     pub fn init(raw: []const u8) Url {
         // TODO: create a hashmap of queries
-        return .{ .raw = raw };
+        // FIX: extractPath should return an error
+        return .{ .raw = raw, .path = extractPath(raw) };
     }
 
-    pub fn host(self: Url) []const u8 {
+    pub fn host(self: *const Url) []const u8 {
         // remove scheme
         var it = std.mem.splitSequence(u8, self.raw, "://");
         _ = it.next().?;
@@ -150,7 +152,7 @@ pub const Url = struct {
         return s1[0..std.mem.indexOf(u8, s1, "/").?];
     }
 
-    pub fn port(self: Url) std.fmt.ParseIntError!?u16 {
+    pub fn port(self: *const Url) std.fmt.ParseIntError!?u16 {
         // remove scheme
         var it = std.mem.splitSequence(u8, self.raw, "://");
         _ = it.next().?;
@@ -164,17 +166,17 @@ pub const Url = struct {
         return null;
     }
 
-    pub fn path(self: Url) Path {
+    fn extractPath(raw: []const u8) Path {
         // remove scheme
-        var it = std.mem.splitSequence(u8, self.raw, "://");
+        var it = std.mem.splitSequence(u8, raw, "://");
         _ = it.next().?;
         const s1 = it.next().?;
 
         const i = std.mem.indexOf(u8, s1, "/").?;
         if (std.mem.indexOf(u8, s1, "?")) |end| {
-            return Path{ .path = s1[i..end] };
+            return Path{ .str = s1[i..end] };
         }
-        return Path{ .path = s1[i..] };
+        return Path{ .str = s1[i..] };
     }
 };
 
@@ -402,7 +404,7 @@ pub const StripPrefix = struct {
 
     fn handle(ctx: ?*anyopaque, res: *Response, req: *const Request) !void {
         const self: *StripPrefix = @ptrCast(@alignCast(ctx.?));
-        const path = req.url.path().path;
+        const path = req.url.path.str;
         const index = std.mem.indexOf(u8, path, self.prefix);
         if (index) |i| {
             const new_path = path[i + self.prefix.len - 1 ..];
@@ -455,7 +457,7 @@ pub const FileServer = struct {
     fn handle(ctx: ?*anyopaque, res: *Response, req: *const Request) !void {
         const self: *FileServer = @ptrCast(@alignCast(ctx.?));
         const path = Path{
-            .path = req.url.path().path[1..], // remove the beginning /
+            .str = req.url.path.str[1..], // remove the beginning /
         };
         var iter = self.dir.iterate();
         while (try iter.next()) |file| {
@@ -476,14 +478,14 @@ pub const FileServer = struct {
                 try res.headers.put("Content-Type", content_type);
                 const f = try self.dir.readFileAlloc(
                     res.arena,
-                    path.path,
+                    path.str,
                     std.math.maxInt(u32),
                 );
                 res.body = f;
                 return;
             }
         }
-        return notFound(res, path.path);
+        return notFound(res, path.str);
     }
 
     fn isValid(self: *const FileServer, file_name: []const u8) bool {
@@ -654,15 +656,15 @@ test Url {
         },
     };
     for (&tests, 0..) |*t, i| {
-        const url = Url{ .raw = t.raw };
+        const url = Url.init(t.raw);
         errdefer {
             std.debug.print("Failed test {}\n", .{i});
-            std.debug.print("[path] got={s} expected={s}\n", .{ url.path().path, t.path });
+            std.debug.print("[path] got={s} expected={s}\n", .{ url.path.str, t.path });
             std.debug.print("[host] got={s} expected={s}\n", .{ url.host(), t.host });
             std.debug.print("[port] got={!?} expected={?}\n", .{ url.port(), t.port });
         }
 
-        try std.testing.expect(url.path().eql(t.path));
+        try std.testing.expect(url.path.eql(t.path));
         try std.testing.expect(std.mem.eql(u8, url.host(), t.host));
         try std.testing.expect(try url.port() == t.port);
     }

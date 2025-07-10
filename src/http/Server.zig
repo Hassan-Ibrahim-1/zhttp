@@ -15,7 +15,9 @@ address: std.net.Address,
 host: []const u8,
 listener: ?posix.socket_t,
 router: *http.Router,
+
 event_loop: io.EventLoop,
+event_loop_mu: std.Thread.Mutex,
 
 pub fn init(alloc: Allocator, host: []const u8, port: u16) !Server {
     const addr = try net.Address.parseIp(host, port);
@@ -26,6 +28,7 @@ pub fn init(alloc: Allocator, host: []const u8, port: u16) !Server {
         .listener = null,
         .router = undefined,
         .event_loop = try io.EventLoop.init(),
+        .event_loop_mu = .{},
     };
 }
 
@@ -75,7 +78,12 @@ pub fn listen(self: *Server, router: *http.Router) !void {
     defer mem_pool.deinit();
 
     while (true) {
-        var iter = self.event_loop.wait();
+        var iter = it: {
+            self.event_loop_mu.lock();
+            defer self.event_loop_mu.unlock();
+            break :it self.event_loop.wait();
+        };
+
         while (iter.next()) |ev| {
             switch (ev) {
                 .accept => {
@@ -95,6 +103,8 @@ pub fn listen(self: *Server, router: *http.Router) !void {
 
                     log.info("connected to {}", .{client_address});
 
+                    self.event_loop_mu.lock();
+                    defer self.event_loop_mu.unlock();
                     try self.event_loop.newClient(client);
                 },
                 .read => |client| {
@@ -114,21 +124,10 @@ pub fn listen(self: *Server, router: *http.Router) !void {
                         },
                     };
 
-                    const req = try http.parser.parseRequest(self, msg, alloc);
-                    // this dispatch should be done in a new thread
-                    // it should then set the client to write mode
-                    // and the main thread will write the response to the client
-                    try self.router.dispatch(&client.res, &req);
-                    if (!client.res.headers.contains("Content-Length") and client.res.body.len > 0) {
-                        const len = try std.fmt.allocPrint(alloc, "{}", .{client.res.body.len});
-                        try client.res.headers.put("Content-Length", len);
-                    }
-
-                    try validateHeaders(&client.res);
-
-                    const res_str = try std.fmt.allocPrint(alloc, "{}", .{client.res});
-                    client.writer.buf = res_str;
-                    try self.event_loop.setIoMode(client, .write);
+                    const req = try alloc.create(http.Request);
+                    // TODO: parser.parseRequest should return a pointer
+                    req.* = try http.parser.parseRequest(self, msg, alloc);
+                    // dispatch
                 },
                 .write => |client| {
                     client.writer.write() catch |err| {
@@ -141,6 +140,58 @@ pub fn listen(self: *Server, router: *http.Router) !void {
             }
         }
     }
+}
+
+fn dispatchClient(
+    self: *Server,
+    client: *Client,
+    req: *const http.Request,
+) void {
+    self.router.dispatch(&client.res, req) catch |err| {
+        clientDispatchError(req.url.path.str, client.addr, err);
+        return;
+    };
+
+    const alloc = client.arena.allocator();
+    try self.router.dispatch(&client.res, &req);
+    if (!client.res.headers.contains("Content-Length") and client.res.body.len > 0) {
+        const len = std.fmt.allocPrint(alloc, "{}", .{client.res.body.len}) catch |err| {
+            clientDispatchError(req.url.path.str, client.addr, err);
+            return;
+        };
+        client.res.headers.put("Content-Length", len) catch |err| {
+            clientDispatchError(req.url.path.str, client.addr, err);
+            return;
+        };
+    }
+
+    validateHeaders(&client.res) catch |err| {
+        clientDispatchError(req.url.path.str, client.addr, err);
+        return;
+    };
+
+    const res_str = std.fmt.allocPrint(alloc, "{}", .{client.res}) catch |err| {
+        clientDispatchError(req.url.path.str, client.addr, err);
+        return;
+    };
+    client.writer.buf = res_str;
+
+    self.event_loop_mu.lock();
+    defer self.event_loop_mu.unlock();
+    self.event_loop.setIoMode(client, .write) catch |err| {
+        clientDispatchError(req.url.path.str, client.addr, err);
+    };
+}
+
+fn clientDispatchError(
+    url_path: []const u8,
+    client_addr: net.Address,
+    err: anyerror,
+) void {
+    log.err(
+        "dispatch to {s} for client {} failed, reason: {}",
+        .{ url_path, client_addr, err },
+    );
 }
 
 fn clientError(err: anyerror) void {

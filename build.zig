@@ -41,4 +41,12 @@ pub fn build(b: *std.Build) void {
 
     const build_test_step = b.step("build-test", "Build unit tests");
     build_test_step.dependOn(&build_exe_unit_tests.step);
+
+    const exe_check = b.addExecutable(.{
+        .name = "zhttp",
+        .root_module = exe_mod,
+    });
+
+    const check = b.step("check", "Check if foo compiles");
+    check.dependOn(&exe_check.step);
 }

@@ -1,3 +1,5 @@
+//! Thread safe HTTP multiplexer
+
 const std = @import("std");
 const posix = std.posix;
 const Allocator = std.mem.Allocator;
@@ -13,11 +15,13 @@ const Router = @This();
 
 arena: std.heap.ArenaAllocator,
 handlers: std.StringHashMap(Handler),
+handlers_mu: std.Thread.Mutex,
 
 pub fn init(alloc: Allocator) Router {
     return .{
         .arena = .init(alloc),
         .handlers = .init(alloc),
+        .handlers_mu = .{},
     };
 }
 
@@ -27,6 +31,9 @@ pub fn deinit(self: *Router) void {
 }
 
 fn deinitHandlers(self: *Router) void {
+    self.handlers_mu.lock();
+    defer self.handlers_mu.unlock();
+
     var iter = self.handlers.valueIterator();
     while (iter.next()) |handler| {
         handler.deinit();
@@ -71,23 +78,34 @@ pub fn tryHandle(
     handler: Handler,
 ) Allocator.Error!void {
     const r = try self.arena.allocator().dupe(u8, route);
+
+    self.handlers_mu.lock();
+    defer self.handlers_mu.unlock();
     try self.handlers.put(r, handler);
 }
 
 pub fn dispatch(self: *Router, res: *Response, req: *const Request) !void {
     const best_route = self.findBestRoute(req) orelse
-        return http.notFound(res, req.url.path().path);
+        return http.notFound(res, req.url.path.str);
     log.info("dispatching to {s}", .{best_route});
+
+    self.handlers_mu.lock();
+    defer self.handlers_mu.unlock();
+
     if (self.handlers.get(best_route)) |handler| {
         return handler.handle(res, req);
     }
 }
 
 // FIXME: This is a horrible and inefficient algorithm
-fn findBestRoute(self: *const Router, req: *const Request) ?[]const u8 {
+fn findBestRoute(self: *Router, req: *const Request) ?[]const u8 {
     var best: ?[]const u8 = null;
 
-    const path = req.url.path().path;
+    const path = req.url.path.str;
+
+    self.handlers_mu.lock();
+    defer self.handlers_mu.unlock();
+
     var iter = self.handlers.keyIterator();
 
     while (iter.next()) |route_ptr| {

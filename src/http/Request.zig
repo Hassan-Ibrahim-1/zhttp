@@ -43,7 +43,7 @@ test format {
     var req = Request{
         .method = .get,
         .protocol = .http11,
-        .url = .{ .raw = "http://example.com/index.html" },
+        .url = .init("http://example.com/index.html"),
         .body = "<p>Hello</p>",
         .arena = undefined,
         .headers = .init(alloc),

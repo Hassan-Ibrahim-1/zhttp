@@ -1,4 +1,5 @@
 implement http 1.1
+
 figure out concurrency
 figure out javascript / css / html
 websockets
@@ -66,6 +67,8 @@ TOMORROW:
     make isPrefixOf and findBestRoute better. they are really inefficient and dirty
     fix up the dirty code in FileServer and StripPrefix, some repeated stuff, etc
         just go through it
+    
+    clean up allocation if an error occurs
 
     concurrency
         this is big
