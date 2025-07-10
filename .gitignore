@@ -1,3 +1,6 @@
 .zig-cache
 zig-out
 plain.txt
+md.md
+test.c
+test
