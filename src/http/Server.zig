@@ -37,6 +37,18 @@ pub fn deinit(self: *Server) void {
     self.router.deinit();
 }
 
+pub fn close(self: *Server) void {
+    if (self.listener) |l| {
+        posix.close(l);
+        self.listener = null;
+    } else {
+        log.warn(
+            "tried to close a server that isn't listening on any address",
+            .{},
+        );
+    }
+}
+
 pub fn listen(self: *Server, router: *http.Router) !void {
     self.router = router;
     const tpe: u32 = posix.SOCK.STREAM | posix.SOCK.NONBLOCK;
@@ -88,7 +100,6 @@ pub fn listen(self: *Server, router: *http.Router) !void {
                     };
                 },
                 .read => |client| {
-                    log.info("read event", .{});
                     self.handleClient(client) catch |err| {
                         log.err("client failed: {}", .{err});
                     };
@@ -109,10 +120,7 @@ fn handleClient(self: *Server, client: *Client) !void {
     const reader = &client.reader;
 
     const msg = reader.readMessage(alloc) catch |err| switch (err) {
-        error.WouldBlock => {
-            log.info("would block so returning early", .{});
-            return;
-        },
+        error.WouldBlock => return,
         else => {
             log.err(
                 "failed to read message from {}. reason: {}",
@@ -124,8 +132,6 @@ fn handleClient(self: *Server, client: *Client) !void {
     };
 
     defer client.deinit();
-
-    log.info("fully read message", .{});
 
     const req = try http.parser.parseRequest(self, msg, alloc);
 
@@ -157,36 +163,6 @@ fn validateHeaders(res: *const http.Response) !void {
     }
 }
 
-/// reads from the socket
-fn readHttpHeaders(alloc: Allocator, socket: posix.socket_t) ![]u8 {
-    var buf: [512]u8 = undefined;
-    var ret = std.ArrayList(u8).init(alloc);
-    while (true) {
-        const read = try posix.read(socket, &buf);
-        if (read == 0) {
-            return error.Closed;
-        }
-        if (std.mem.indexOf(u8, &buf, "\r\n\r\n")) |index| {
-            try ret.appendSlice(buf[0 .. index + 3]);
-            break;
-        }
-        try ret.appendSlice(buf[0..read]);
-    }
-    return ret.toOwnedSlice();
-}
-
-pub fn close(self: *Server) void {
-    if (self.listener) |l| {
-        posix.close(l);
-        self.listener = null;
-    } else {
-        log.warn(
-            "tried to close a server that isn't listening on any address",
-            .{},
-        );
-    }
-}
-
 fn writeMessage(socket: posix.socket_t, msg: []const u8) !void {
     try writeAll(socket, msg);
 }
@@ -194,7 +170,10 @@ fn writeMessage(socket: posix.socket_t, msg: []const u8) !void {
 fn writeAll(socket: posix.socket_t, msg: []const u8) !void {
     var pos: usize = 0;
     while (pos < msg.len) {
-        const written = try posix.write(socket, msg[pos..]);
+        const written = posix.write(socket, msg[pos..]) catch |err| {
+            if (err == error.WouldBlock) continue;
+            return err;
+        };
         if (written == 0) {
             return error.Closed;
         }

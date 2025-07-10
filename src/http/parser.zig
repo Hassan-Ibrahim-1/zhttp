@@ -1,8 +1,10 @@
 const std = @import("std");
-const log = std.log.scoped(.Server);
 const Allocator = std.mem.Allocator;
 
 const http = @import("http.zig");
+const debug = http.debug;
+
+const log = std.log.scoped(.Server);
 
 pub const ParseError = error{
     InvalidHttpRequest,

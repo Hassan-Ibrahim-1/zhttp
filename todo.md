@@ -118,6 +118,10 @@ TOMORROW:
     add more tests in general, isolate stuff that can be isolated
         end to end tests using the mocking library i'll eventually write
 
+    when the server is listening add an override for ctrl-c so that it stops
+    listening and cleans up appropriately. im not getting any mem leak info 
+    because of this.
+
 
 Problem:
     error.WouldBlock is returned by HttpReader

@@ -4,14 +4,15 @@ const Allocator = std.mem.Allocator;
 pub const Status = std.http.Status;
 
 pub const Client = @import("Client.zig");
+pub const debug = @import("debug/debug.zig");
+pub const Handler = @import("Handler.zig");
+pub const io = @import("io/io.zig");
+pub const Mime = @import("mime.zig").Mime;
 pub const parser = @import("parser.zig");
 pub const Request = @import("Request.zig");
 pub const Response = @import("Response.zig");
 pub const Router = @import("Router.zig");
 pub const Server = @import("Server.zig");
-pub const Handler = @import("Handler.zig");
-pub const Mime = @import("mime.zig").Mime;
-pub const io = @import("io/io.zig");
 
 const log = std.log.scoped(.http);
 
@@ -199,6 +200,10 @@ pub const HttpReader = struct {
         self.buf.deinit();
     }
 
+    pub fn dump(self: *const HttpReader) void {
+        debug.dump("dump.txt", self.buf.items[0..self.pos], .write);
+    }
+
     pub fn readMessage(self: *HttpReader, alloc: Allocator) ![]u8 {
         if (self.buf.items.len == 0) {
             try self.ensureSpace(512);
@@ -227,6 +232,9 @@ pub const HttpReader = struct {
     }
 
     /// if null, there is no body
+    /// FIXME: verify that the Content-Length header is actually
+    /// a part of the request head and is not in the body
+    /// this seems to be easily exploitable
     fn bodyLen(msg: []const u8) std.fmt.ParseIntError!?usize {
         const header = "Content-Length: ";
         const index = std.mem.indexOf(u8, msg, header);
@@ -255,20 +263,38 @@ pub const HttpReader = struct {
         const unprocessed = buf[start..pos];
         const index = std.mem.indexOf(u8, unprocessed, "\r\n\r\n");
         if (index) |i| {
-            self.start += i + 4;
-            return try self.extractBody(start);
+            const head_end = i + 4;
+            const b = try self.extractBody(head_end - self.start);
+            self.start += head_end;
+            return b;
         }
         return null;
     }
 
-    fn extractBody(self: *HttpReader, start: usize) ![]u8 {
-        const msg = self.buf.items[start..self.start];
+    fn sendContinue(self: *HttpReader) !void {
+        const msg = continue100();
+
+        var pos: usize = 0;
+        while (pos < msg.len) {
+            const written = try posix.write(self.socket, msg[pos..]);
+            if (written == 0) {
+                return error.Closed;
+            }
+            pos += written;
+        }
+    }
+
+    fn extractBody(self: *HttpReader, head_len: usize) ![]u8 {
+        const msg = self.buf.items[self.start..self.pos];
         const body_len = try bodyLen(msg) orelse return msg;
         if (body_len == 0) return msg;
 
+        try self.sendContinue();
+
         while (true) {
             if (self.pos - self.start >= body_len) {
-                self.start += body_len;
+                const start = self.start;
+                self.start += body_len + head_len;
                 return self.buf.items[start..self.start];
             }
             try self.readSocket();
@@ -276,6 +302,10 @@ pub const HttpReader = struct {
         return msg;
     }
 };
+
+fn continue100() []const u8 {
+    return "HTTP/1.1 100 Continue\r\n\r\n";
+}
 
 /// only sets the response's body, nothing else
 /// the caller must set the content type and status code
