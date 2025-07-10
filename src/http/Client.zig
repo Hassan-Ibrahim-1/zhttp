@@ -13,6 +13,7 @@ addr: net.Address,
 socket: posix.socket_t,
 res: http.Response,
 reader: http.HttpReader,
+writer: http.HttpWriter,
 
 pub fn init(
     alloc: Allocator,
@@ -49,10 +50,15 @@ pub fn init(
             .status_code = .ok,
         },
         .reader = http.HttpReader.init(arena.allocator(), socket),
+        .writer = .{
+            .buf = "",
+            .socket = socket,
+        },
     };
 }
 
 pub fn deinit(self: *Client) void {
+    log.info("deinitializing {}", .{self.addr});
     const alloc = self.arena.child_allocator;
     self.arena.deinit();
     alloc.destroy(self.arena);

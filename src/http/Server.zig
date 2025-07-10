@@ -93,62 +93,58 @@ pub fn listen(self: *Server, router: *http.Router) !void {
                     const client: *Client = try mem_pool.create();
                     client.* = try .init(self.alloc, client_address, socket);
 
-                    try self.event_loop.newClient(client);
+                    log.info("connected to {}", .{client_address});
 
-                    self.handleClient(client) catch |err| {
-                        log.err("client failed: {}", .{err});
-                    };
+                    try self.event_loop.newClient(client);
                 },
                 .read => |client| {
-                    self.handleClient(client) catch |err| {
-                        log.err("client failed: {}", .{err});
+                    const alloc = client.arena.allocator();
+                    const reader = &client.reader;
+
+                    const msg = reader.readMessage(alloc) catch |err| switch (err) {
+                        error.WouldBlock => continue,
+                        else => {
+                            log.err(
+                                "failed to read message from {}. reason: {}",
+                                .{ client.addr, err },
+                            );
+                            client.deinit();
+                            clientError(err);
+                            continue;
+                        },
                     };
+
+                    const req = try http.parser.parseRequest(self, msg, alloc);
+                    // this dispatch should be done in a new thread
+                    // it should then set the client to write mode
+                    // and the main thread will write the response to the client
+                    try self.router.dispatch(&client.res, &req);
+                    if (!client.res.headers.contains("Content-Length") and client.res.body.len > 0) {
+                        const len = try std.fmt.allocPrint(alloc, "{}", .{client.res.body.len});
+                        try client.res.headers.put("Content-Length", len);
+                    }
+
+                    try validateHeaders(&client.res);
+
+                    const res_str = try std.fmt.allocPrint(alloc, "{}", .{client.res});
+                    client.writer.buf = res_str;
+                    try self.event_loop.setIoMode(client, .write);
                 },
-                else => {
-                    log.info("recieved a different event type: {s}", .{@tagName(ev)});
+                .write => |client| {
+                    client.writer.write() catch |err| {
+                        if (err == error.WouldBlock) {
+                            continue;
+                        } else clientError(err);
+                    };
+                    client.deinit();
                 },
             }
         }
     }
 }
 
-fn handleClient(self: *Server, client: *Client) !void {
-    log.info("connected to {}", .{client.addr});
-
-    const alloc = client.arena.allocator();
-
-    const reader = &client.reader;
-
-    const msg = reader.readMessage(alloc) catch |err| switch (err) {
-        error.WouldBlock => return,
-        else => {
-            log.err(
-                "failed to read message from {}. reason: {}",
-                .{ client.addr, err },
-            );
-            client.deinit();
-            return err;
-        },
-    };
-
-    defer client.deinit();
-
-    const req = try http.parser.parseRequest(self, msg, alloc);
-
-    // this dispatch should be done in a new thread
-    // it should then set the client to write mode
-    // and the main thread will write the response to the client
-    // where should the response be stored temporarily though?
-    try self.router.dispatch(&client.res, &req);
-    if (!client.res.headers.contains("Content-Length") and client.res.body.len > 0) {
-        const len = try std.fmt.allocPrint(alloc, "{}", .{client.res.body.len});
-        try client.res.headers.put("Content-Length", len);
-    }
-
-    try validateHeaders(&client.res);
-
-    const res_str = try std.fmt.allocPrint(alloc, "{}", .{client.res});
-    try writeAll(client.socket, res_str);
+fn clientError(err: anyerror) void {
+    log.err("client failed: {}", .{err});
 }
 
 fn validateHeaders(res: *const http.Response) !void {
@@ -160,37 +156,5 @@ fn validateHeaders(res: *const http.Response) !void {
             log.err("{s}: {s} is not a valid header", .{ k, v });
             return error.InvalidHeader;
         }
-    }
-}
-
-fn writeMessage(socket: posix.socket_t, msg: []const u8) !void {
-    try writeAll(socket, msg);
-}
-
-fn writeAll(socket: posix.socket_t, msg: []const u8) !void {
-    var pos: usize = 0;
-    while (pos < msg.len) {
-        const written = posix.write(socket, msg[pos..]) catch |err| {
-            if (err == error.WouldBlock) continue;
-            return err;
-        };
-        if (written == 0) {
-            return error.Closed;
-        }
-        pos += written;
-    }
-}
-
-fn writeAllVectored(socket: posix.socket_t, vec: []posix.iovec_const) !void {
-    var i: usize = 0;
-    while (true) {
-        var n = try posix.writev(socket, vec[i..]);
-        while (n >= vec[i].len) {
-            n -= vec[i].len;
-            i += 1;
-            if (i >= vec.len) return;
-        }
-        vec[i].base += n;
-        vec[i].len -= n;
     }
 }

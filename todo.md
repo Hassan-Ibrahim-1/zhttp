@@ -98,7 +98,6 @@ TOMORROW:
             or should the main thread be the only one allowed to 
             interface with clients at all
 
-
             main thread reads from a socket and parses the request
             dispatch that request to a handler that runs in a worker thread (this is where a queue comes in)
             the worker thread then updates the client to poll for writes and the main thread then writes the
@@ -121,13 +120,14 @@ TOMORROW:
     when the server is listening add an override for ctrl-c so that it stops
     listening and cleans up appropriately. im not getting any mem leak info 
     because of this.
+    
+    server should be able to respond to Expect headers
 
 
 Problem:
-    error.WouldBlock is returned by HttpReader
-    but for some reason it doesn't read after two blocks
-    fix this so that reads can be done asynchronously
-    
+    -- async http reader
+    async http writer
+
     after this start working on making handlers multithreaded
         after the handler generates a response, router.dispatch
         should set clients mode to write.

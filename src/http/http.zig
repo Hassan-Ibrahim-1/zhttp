@@ -231,10 +231,11 @@ pub const HttpReader = struct {
         self.pos = pos + n;
     }
 
+    // FIXME: verify that the Content-Length header is actually
+    // a part of the request head and is not in the body
+    // this seems to be easily exploitable
+
     /// if null, there is no body
-    /// FIXME: verify that the Content-Length header is actually
-    /// a part of the request head and is not in the body
-    /// this seems to be easily exploitable
     fn bodyLen(msg: []const u8) std.fmt.ParseIntError!?usize {
         const header = "Content-Length: ";
         const index = std.mem.indexOf(u8, msg, header);
@@ -289,7 +290,7 @@ pub const HttpReader = struct {
         const body_len = try bodyLen(msg) orelse return msg;
         if (body_len == 0) return msg;
 
-        try self.sendContinue();
+        // try self.sendContinue();
 
         while (true) {
             if (self.pos - self.start >= body_len) {
@@ -300,6 +301,23 @@ pub const HttpReader = struct {
             try self.readSocket();
         }
         return msg;
+    }
+};
+
+pub const HttpWriter = struct {
+    socket: posix.socket_t,
+    buf: []const u8,
+    pos: usize = 0,
+
+    /// if nothing is returned then the write has been completed
+    pub fn write(self: *HttpWriter) !void {
+        while (self.pos < self.buf.len) {
+            const written = try posix.write(self.socket, self.buf[self.pos..]);
+            if (written == 0) {
+                return error.Closed;
+            }
+            self.pos += written;
+        }
     }
 };
 
