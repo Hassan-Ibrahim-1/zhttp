@@ -97,27 +97,19 @@ pub fn schedule(self: *Scheduler, context: Context) !void {
     self.queue_cond.signal();
 }
 
-pub fn unscheduleClient(
-    self: *Scheduler,
-    client: *http.Client,
-) !void {
+pub fn unscheduleClient(self: *Scheduler, client: *http.Client) !void {
     self.queue_mu.lock();
     defer self.queue_mu.unlock();
 
-    var to_remove = std.ArrayList(usize).init(
-        self.queue.buf.allocator,
-    );
-    defer to_remove.deinit();
+    var iter = std.mem.reverseIterator(self.queue.buf.items);
 
-    for (self.queue.buf.items, 0..) |ctx, i| {
+    var i: usize = 0;
+    var removed: usize = 0;
+    while (iter.next()) |ctx| : (i += 1) {
         if (ctx.client == client) {
-            try to_remove.append(i);
+            _ = self.queue.removeAt(i - removed);
+            removed += 1;
         }
-    }
-
-    for (to_remove.items, 0..) |i, removed| {
-        std.debug.assert(self.queue.buf.items[i - removed].client == client);
-        _ = self.queue.removeAt(i - removed);
     }
 }
 
