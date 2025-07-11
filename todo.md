@@ -64,17 +64,19 @@ GOAL:
         - changing font
 
 TOMORROW:
+    KQueue
+
     make isPrefixOf and findBestRoute better. they are really inefficient and dirty
     fix up the dirty code in FileServer and StripPrefix, some repeated stuff, etc
         just go through it
     
     clean up allocation if an error occurs
 
-        how to test this:
-            connect multiple clients to the server. each sends a request to the server
-            have the server wait for at most 2 seconds max before responding with some basic json
-            the entire thing should take at most 2 seconds to finish, it should not compound
-            mocking would be great for this but get some basic concurrency done first
+    how to test this:
+        connect multiple clients to the server. each sends a request to the server
+        have the server wait for at most 2 seconds max before responding with some basic json
+        the entire thing should take at most 2 seconds to finish, it should not compound
+        mocking would be great for this but get some basic concurrency done first
 
     a client that can make requests a server
     a mocking library that can spin up a server and client.
