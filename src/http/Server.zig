@@ -95,10 +95,7 @@ pub fn listen(self: *Server, router: *http.Router) !void {
     defer self.clearClients();
 
     while (true) {
-        var iter = it: {
-            break :it self.event_loop.wait();
-        };
-
+        var iter = try self.event_loop.wait();
         while (iter.next()) |ev| {
             switch (ev) {
                 .accept => {
