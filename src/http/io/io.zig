@@ -159,8 +159,6 @@ const Epoll = struct {
 const KQueue = struct {
     kfd: i32,
     ready_list: [ready_list_len]posix.Kevent,
-    change_list: [16]posix.Kevent = undefined,
-    change_count: usize = 0,
 
     pub const Iterator = struct {
         index: usize,
@@ -174,8 +172,11 @@ const KQueue = struct {
             return switch (ready.udata) {
                 0 => .accept,
                 else => |nptr| ret: {
-                    const node: *http.ConnectionNode = @ptrFromInt(nptr);
-                    if (ready.filter & posix.system.EVFILT.READ == posix.system.EVFILT.READ) {
+                    const node: *http.ConnectionNode = @alignCast(@as(
+                        *http.ConnectionNode,
+                        @ptrFromInt(nptr),
+                    ));
+                    if (ready.filter == posix.system.EVFILT.READ) {
                         break :ret .{ .read = node };
                     }
                     break :ret .{ .write = node };
@@ -203,17 +204,9 @@ const KQueue = struct {
                 .flags = posix.system.EV.ADD,
                 .fflags = 0,
                 .data = 0,
-                .udata = @intCast(listener),
+                .udata = 0,
             },
         }, &.{}, null);
-    }
-
-    fn wait(self: *KQueue) !Iterator {
-        const ready_count = try posix.kevent(self.kfd, &.{}, &self.ready_list, null);
-        return Iterator{
-            .index = 0,
-            .ready_list = self.ready_list[0..ready_count],
-        };
     }
 
     fn removeListener(self: *KQueue, listener: posix.socket_t) !void {
@@ -225,6 +218,14 @@ const KQueue = struct {
             .data = 0,
             .udata = 0,
         });
+    }
+
+    fn wait(self: *KQueue) !Iterator {
+        const count = try posix.kevent(self.kfd, &.{}, &self.ready_list, null);
+        return Iterator{
+            .index = 0,
+            .ready_list = self.ready_list[0..count],
+        };
     }
 
     fn newConnectionNode(self: *KQueue, node: *http.ConnectionNode) !void {
@@ -245,15 +246,15 @@ const KQueue = struct {
             .data = 0,
             .udata = @intFromPtr(node),
         });
+
+        node.data.io_mode = .write;
+        try self.setIoMode(node, .read);
     }
 
-    fn setIoMode(self: *KQueue, node: *http.ConnectionNode, mode: Mode) !void {
-        std.debug.assert(node.data.io_mode != mode);
-
-        node.data.io_mode = mode;
+    fn readMode(self: *KQueue, node: *http.ConnectionNode) !void {
         try self.queueChange(.{
             .ident = @intCast(node.data.socket),
-            .filter = if (mode == .write) posix.system.EVFILT.READ else posix.system.EVFILT.WRITE,
+            .filter = posix.system.EVFILT.WRITE,
             .flags = posix.system.EV.DISABLE,
             .fflags = 0,
             .data = 0,
@@ -262,7 +263,7 @@ const KQueue = struct {
 
         try self.queueChange(.{
             .ident = @intCast(node.data.socket),
-            .filter = if (mode == .write) posix.system.EVFILT.WRITE else posix.system.EVFILT.READ,
+            .filter = posix.system.EVFILT.READ,
             .flags = posix.system.EV.ENABLE,
             .fflags = 0,
             .data = 0,
@@ -270,14 +271,59 @@ const KQueue = struct {
         });
     }
 
-    fn queueChange(self: *KQueue, event: posix.Kevent) !void {
-        var count = self.change_count;
-        if (count == self.change_list.len) {
-            // our change_list batch is full, apply it
-            _ = try posix.kevent(self.kfd, &self.change_list, &.{}, null);
-            count = 0;
+    fn writeMode(self: *KQueue, node: *http.ConnectionNode) !void {
+        try self.queueChange(.{
+            .ident = @intCast(node.data.socket),
+            .filter = posix.system.EVFILT.READ,
+            .flags = posix.system.EV.DISABLE,
+            .fflags = 0,
+            .data = 0,
+            .udata = 0,
+        });
+
+        try self.queueChange(.{
+            .ident = @intCast(node.data.socket),
+            .flags = posix.system.EV.ENABLE,
+            .filter = posix.system.EVFILT.WRITE,
+            .fflags = 0,
+            .data = 0,
+            .udata = @intFromPtr(node),
+        });
+    }
+
+    fn setIoMode(self: *KQueue, node: *http.ConnectionNode, mode: Mode) !void {
+        std.debug.assert(node.data.io_mode != mode);
+        node.data.io_mode = mode;
+        switch (node.data.io_mode) {
+            .write => try self.writeMode(node),
+            .read => try self.readMode(node),
         }
-        self.change_list[count] = event;
-        self.change_count = count + 1;
+    }
+
+    // fn setIoMode(self: *KQueue, node: *http.ConnectionNode, mode: Mode) !void {
+    //     std.debug.assert(node.data.io_mode != mode);
+    //     node.data.io_mode = mode;
+    //
+    //     try self.queueChange(.{
+    //         .ident = @intCast(node.data.socket),
+    //         .filter = if (mode == .write) posix.system.EVFILT.READ else posix.system.EVFILT.WRITE,
+    //         .flags = posix.system.EV.DISABLE,
+    //         .fflags = 0,
+    //         .data = 0,
+    //         .udata = 0,
+    //     });
+    //
+    //     try self.queueChange(.{
+    //         .ident = @intCast(node.data.socket),
+    //         .filter = if (mode == .write) posix.system.EVFILT.WRITE else posix.system.EVFILT.READ,
+    //         .flags = posix.system.EV.ENABLE,
+    //         .fflags = 0,
+    //         .data = 0,
+    //         .udata = @intFromPtr(node),
+    //     });
+    // }
+
+    fn queueChange(self: *KQueue, event: posix.Kevent) !void {
+        _ = try posix.kevent(self.kfd, &.{event}, &.{}, null);
     }
 };

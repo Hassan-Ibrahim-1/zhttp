@@ -120,6 +120,7 @@ pub fn listen(self: *Server, router: *http.Router) !void {
                 },
                 .read => |node| {
                     const client = &node.data;
+
                     const alloc = client.arena.allocator();
                     const reader = &client.reader;
 
