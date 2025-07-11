@@ -16,6 +16,8 @@ pub const Server = @import("Server.zig");
 
 const log = std.log.scoped(.http);
 
+pub const ConnectionNode = std.DoublyLinkedList(Client).Node;
+
 pub const Method = enum {
     get,
     head,

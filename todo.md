@@ -70,9 +70,6 @@ TOMORROW:
     
     clean up allocation if an error occurs
 
-    concurrency
-        this is big
-        
         how to test this:
             connect multiple clients to the server. each sends a request to the server
             have the server wait for at most 2 seconds max before responding with some basic json
@@ -92,8 +89,6 @@ TOMORROW:
     listening and cleans up appropriately. im not getting any mem leak info 
     because of this.
     
-    server should be able to respond to Expect headers
-    
-    implement RFC properly. i have basic http done but things like
+    implement RFC properly. basic http is done but headers like
     Connection: keep-alive, Expect: 100-Continue, are not handled properly
 

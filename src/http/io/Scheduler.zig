@@ -5,7 +5,7 @@ const http = @import("../http.zig");
 
 const Scheduler = @This();
 
-const worker_count = 8;
+const worker_count = 16;
 
 pub fn Queue(T: type) type {
     return struct {
@@ -40,13 +40,13 @@ pub fn Queue(T: type) type {
 
 pub const ClientDispatchFn = *const fn (
     server: *http.Server,
-    client: *http.Client,
+    node: *http.ConnectionNode,
     req: *const http.Request,
 ) void;
 
 pub const Context = struct {
     server: *http.Server,
-    client: *http.Client,
+    node: *http.ConnectionNode,
     req: *const http.Request,
 };
 
@@ -73,12 +73,6 @@ pub fn init(
 }
 
 pub fn deinit(self: *Scheduler) void {
-    if (self.running) {
-        for (self.workers) |worker| {
-            worker.join();
-        }
-    }
-    self.running = false;
     self.queue.deinit();
 }
 
@@ -86,6 +80,14 @@ pub fn start(self: *Scheduler) !void {
     self.running = true;
     for (&self.workers) |*w| {
         w.* = try std.Thread.spawn(.{}, work, .{self});
+    }
+}
+
+pub fn end(self: *Scheduler) void {
+    self.running = false;
+    self.queue_cond.broadcast();
+    for (self.workers) |worker| {
+        worker.join();
     }
 }
 
@@ -97,7 +99,7 @@ pub fn schedule(self: *Scheduler, context: Context) !void {
     self.queue_cond.signal();
 }
 
-pub fn unscheduleClient(self: *Scheduler, client: *http.Client) !void {
+pub fn unscheduleClientTasks(self: *Scheduler, client: *http.Client) !void {
     self.queue_mu.lock();
     defer self.queue_mu.unlock();
 
@@ -106,7 +108,7 @@ pub fn unscheduleClient(self: *Scheduler, client: *http.Client) !void {
     var i: usize = 0;
     var removed: usize = 0;
     while (iter.next()) |ctx| : (i += 1) {
-        if (ctx.client == client) {
+        if (client.addr.eql(ctx.node.data.addr)) {
             _ = self.queue.removeAt(i - removed);
             removed += 1;
         }
@@ -116,16 +118,17 @@ pub fn unscheduleClient(self: *Scheduler, client: *http.Client) !void {
 fn work(self: *Scheduler) void {
     while (self.running) {
         self.queue_mu.lock();
-        while (self.queue.buf.items.len == 0) {
+        while (self.queue.buf.items.len == 0 and self.running) {
             self.queue_cond.wait(&self.queue_mu);
         }
+        if (!self.running) {
+            self.queue_mu.unlock();
+            break;
+        }
+
         const context = self.queue.dequeue().?;
         self.queue_mu.unlock();
 
-        if (!context.client.valid) {
-            std.log.err("invalid client: {}", .{context.client.addr});
-            @panic("OOPS");
-        }
-        self.dispatch(context.server, context.client, context.req);
+        self.dispatch(context.server, context.node, context.req);
     }
 }

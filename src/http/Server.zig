@@ -15,6 +15,8 @@ address: net.Address,
 host: []const u8,
 listener: ?posix.socket_t,
 router: *http.Router,
+clients: std.DoublyLinkedList(Client),
+node_pool: std.heap.MemoryPool(http.ConnectionNode),
 
 event_loop: io.EventLoop,
 event_loop_mu: std.Thread.Mutex,
@@ -32,6 +34,8 @@ pub fn init(alloc: Allocator, host: []const u8, port: u16) !Server {
         .event_loop = try io.EventLoop.init(),
         .event_loop_mu = .{},
         .scheduler = .init(alloc, dispatchClient),
+        .node_pool = .init(alloc),
+        .clients = .{},
     };
 }
 
@@ -42,6 +46,13 @@ pub fn deinit(self: *Server) void {
     self.event_loop.deinit();
     self.scheduler.deinit();
     self.router.deinit();
+    self.node_pool.deinit();
+}
+
+fn clearClients(self: *Server) void {
+    while (self.clients.pop()) |n| {
+        n.data.deinit();
+    }
 }
 
 pub fn close(self: *Server) void {
@@ -78,10 +89,10 @@ pub fn listen(self: *Server, router: *http.Router) !void {
     try self.event_loop.addListener(listener);
     defer self.event_loop.removeListener(listener) catch unreachable;
 
-    var mem_pool = std.heap.MemoryPool(Client).init(self.alloc);
-    defer mem_pool.deinit();
-
     try self.scheduler.start();
+    defer self.scheduler.end();
+
+    defer self.clearClients();
 
     while (true) {
         var iter = it: {
@@ -102,14 +113,16 @@ pub fn listen(self: *Server, router: *http.Router) !void {
                         log.err("error accept: {}\n", .{err});
                         continue;
                     };
-                    const client: *Client = try mem_pool.create();
-                    client.* = try .init(self.alloc, client_address, socket);
+                    const node = try self.node_pool.create();
+                    node.data = try .init(self.alloc, client_address, socket);
+                    self.clients.append(node);
 
-                    // log.info("connected to {}", .{client_address});
+                    try self.event_loop.newConnectionNode(node);
 
-                    try self.event_loop.newClient(client);
+                    log.info("connected to {}", .{client_address});
                 },
-                .read => |client| {
+                .read => |node| {
+                    const client = &node.data;
                     const alloc = client.arena.allocator();
                     const reader = &client.reader;
 
@@ -121,7 +134,7 @@ pub fn listen(self: *Server, router: *http.Router) !void {
                                 .{ client.addr, err },
                             );
                             log.info("{} deinit in read", .{client.addr});
-                            try self.removeClient(client);
+                            try self.removeClient(node);
                             clientError(err);
                             continue;
                         },
@@ -133,18 +146,19 @@ pub fn listen(self: *Server, router: *http.Router) !void {
 
                     try self.scheduler.schedule(.{
                         .server = self,
-                        .client = client,
+                        .node = node,
                         .req = req,
                     });
                 },
-                .write => |client| {
+                .write => |node| {
+                    const client = &node.data;
                     client.writer.write() catch |err| {
                         if (err == error.WouldBlock) {
                             continue;
                         } else clientError(err);
                     };
                     log.info("{} deinit in write", .{client.addr});
-                    try self.removeClient(client);
+                    try self.removeClient(node);
                 },
             }
         }
@@ -153,11 +167,12 @@ pub fn listen(self: *Server, router: *http.Router) !void {
 
 fn dispatchClient(
     self: *Server,
-    client: *Client,
+    node: *http.ConnectionNode,
     req: *const http.Request,
 ) void {
+    const client = &node.data;
+
     const alloc = client.arena.allocator();
-    std.debug.assert(client.valid);
     self.router.dispatch(&client.res, req) catch |err| {
         clientDispatchError(req.url.path.str, client.addr, err);
         return;
@@ -184,14 +199,15 @@ fn dispatchClient(
     };
     client.writer.buf = res_str;
 
-    self.event_loop.setIoMode(client, .write) catch |err| {
+    self.event_loop.setIoMode(node, .write) catch |err| {
         clientDispatchError(req.url.path.str, client.addr, err);
     };
 }
 
-fn removeClient(self: *Server, client: *Client) !void {
-    try self.scheduler.unscheduleClient(client);
-    client.deinit();
+fn removeClient(self: *Server, node: *http.ConnectionNode) !void {
+    try self.scheduler.unscheduleClientTasks(&node.data);
+    node.data.deinit();
+    self.clients.remove(node);
 }
 
 fn clientDispatchError(

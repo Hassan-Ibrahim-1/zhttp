@@ -87,7 +87,7 @@ pub fn tryHandle(
 pub fn dispatch(self: *Router, res: *Response, req: *const Request) !void {
     const best_route = self.findBestRoute(req) orelse
         return http.notFound(res, req.url.path.str);
-    // log.info("dispatching to {s}", .{best_route});
+    log.info("dispatching to {s}", .{best_route});
 
     self.handlers_mu.lock();
     defer self.handlers_mu.unlock();

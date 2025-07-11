@@ -14,7 +14,6 @@ socket: posix.socket_t,
 res: http.Response,
 reader: http.HttpReader,
 writer: http.HttpWriter,
-valid: bool = true,
 io_mode: http.io.Mode,
 
 pub fn init(
@@ -68,6 +67,4 @@ pub fn deinit(self: *Client) void {
     alloc.destroy(self.arena);
 
     posix.close(self.socket);
-
-    self.valid = false;
 }

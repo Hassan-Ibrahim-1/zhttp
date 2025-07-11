@@ -33,15 +33,15 @@ pub const EventLoop = struct {
         try self.impl.removeListener(listener);
     }
 
-    pub fn newClient(self: *EventLoop, client: *http.Client) !void {
-        try self.impl.newClient(client);
+    pub fn newConnectionNode(self: *EventLoop, node: *http.ConnectionNode) !void {
+        try self.impl.newConnectionNode(node);
     }
 
-    pub fn setIoMode(self: *EventLoop, client: *http.Client, mode: Mode) !void {
+    pub fn setIoMode(self: *EventLoop, node: *http.ConnectionNode, mode: Mode) !void {
         self.mu.lock();
         defer self.mu.unlock();
 
-        try self.impl.setIoMode(client, mode);
+        try self.impl.setIoMode(node, mode);
     }
 };
 
@@ -54,13 +54,13 @@ const Impl = if (builtin.os.tag == .linux) Epoll else @compileError("unsupported
 
 pub const Event = union(enum) {
     accept: void,
-    read: *http.Client,
-    write: *http.Client,
+    read: *http.ConnectionNode,
+    write: *http.ConnectionNode,
 };
 
 const Epoll = struct {
     efd: posix.fd_t,
-    ready_list: [128]linux.epoll_event = undefined,
+    ready_list: [1024]linux.epoll_event = undefined,
 
     pub const Iterator = struct {
         index: usize,
@@ -74,7 +74,7 @@ const Epoll = struct {
             return switch (ready.data.ptr) {
                 0 => .accept,
                 else => |nptr| ret: {
-                    const client: *http.Client = @ptrFromInt(nptr);
+                    const client: *http.ConnectionNode = @ptrFromInt(nptr);
                     if (ready.events & linux.POLL.IN == linux.POLL.IN) {
                         break :ret .{ .read = client };
                     }
@@ -116,35 +116,35 @@ const Epoll = struct {
         try posix.epoll_ctl(self.efd, linux.EPOLL.CTL_DEL, listener, null);
     }
 
-    fn newClient(self: *Epoll, client: *http.Client) !void {
+    fn newConnectionNode(self: *Epoll, node: *http.ConnectionNode) !void {
         var event = linux.epoll_event{
             .events = linux.POLL.IN,
-            .data = .{ .ptr = @intFromPtr(client) },
+            .data = .{ .ptr = @intFromPtr(node) },
         };
         try posix.epoll_ctl(
             self.efd,
             linux.EPOLL.CTL_ADD,
-            client.socket,
+            node.data.socket,
             &event,
         );
     }
 
-    fn setIoMode(self: *Epoll, client: *http.Client, mode: Mode) !void {
-        std.debug.assert(client.io_mode != mode);
-        client.io_mode = mode;
+    fn setIoMode(self: *Epoll, node: *http.ConnectionNode, mode: Mode) !void {
+        std.debug.assert(node.data.io_mode != mode);
+        node.data.io_mode = mode;
 
         var event = linux.epoll_event{
             .events = switch (mode) {
                 .read => linux.POLL.IN,
                 .write => linux.POLL.OUT,
             },
-            .data = .{ .ptr = @intFromPtr(client) },
+            .data = .{ .ptr = @intFromPtr(node) },
         };
 
         try posix.epoll_ctl(
             self.efd,
             linux.EPOLL.CTL_MOD,
-            client.socket,
+            node.data.socket,
             &event,
         );
     }
