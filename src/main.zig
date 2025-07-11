@@ -1,7 +1,7 @@
 const std = @import("std");
 const log = std.log;
 
-const http = @import("http/http.zig");
+pub const http = @import("http/http.zig");
 
 pub fn main() !void {
     var gpa: std.heap.DebugAllocator(.{}) = .init;

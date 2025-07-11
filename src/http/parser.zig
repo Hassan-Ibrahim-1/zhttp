@@ -7,18 +7,24 @@ const debug = http.debug;
 const log = std.log.scoped(.Server);
 
 pub const ParseError = error{
-    InvalidHttpRequest,
+    InvalidHttpMessage,
     InvalidRequestLine,
+    InvalidStatusLine,
+    InvalidStatusCode,
     InvalidMethod,
     InvalidUrl,
     InvalidProtocol,
     InvalidHeader,
     InvalidBody,
-} || http.UrlParseError;
+} || http.UrlParseError || std.fmt.ParseIntError;
 
-pub fn parseRequest(server: *http.Server, req: []const u8, arena: Allocator) ParseError!http.Request {
+pub fn parseRequest(
+    server: *http.Server,
+    req: []const u8,
+    arena: Allocator,
+) ParseError!http.Request {
     if (!std.mem.containsAtLeast(u8, req, 2, "\r\n")) {
-        return error.InvalidHttpRequest;
+        return error.InvalidHttpMessage;
     }
     var lines = std.mem.splitSequence(u8, req, "\r\n");
 
@@ -33,8 +39,11 @@ pub fn parseRequest(server: *http.Server, req: []const u8, arena: Allocator) Par
         try headers.put(kv.key, kv.value);
     }
 
+    const body = lines.next() orelse "";
+
     return http.Request{
         .method = req_line.method,
+        // BUG: what happens if the url is already a full url
         .url = try .fromRelative(
             arena,
             req_line.url_raw,
@@ -44,7 +53,7 @@ pub fn parseRequest(server: *http.Server, req: []const u8, arena: Allocator) Par
         ),
         .protocol = req_line.protocol,
         .arena = arena,
-        .body = lines.next() orelse "",
+        .body = body,
         .headers = headers,
     };
 }
@@ -116,6 +125,63 @@ fn validHeaderValueChar(ch: u8) bool {
     return true;
 }
 
+pub fn parseResponse(
+    res: []const u8,
+    arena: Allocator,
+) ParseError!*http.Response {
+    if (!std.mem.containsAtLeast(u8, res, 2, "\r\n")) {
+        return error.InvalidHttpMessage;
+    }
+    var lines = std.mem.splitSequence(u8, res, "\r\n");
+    const status_line = try parseStatusLine(lines.next().?);
+
+    var headers = std.StringHashMap([]const u8).init(arena);
+
+    while (lines.next()) |header| {
+        // \r\n\r\n pattern found
+        if (header.len == 0) break;
+        const kv = try parseHeader(arena, header);
+        try headers.put(kv.key, kv.value);
+    }
+
+    const body = lines.next() orelse "";
+
+    const response = try arena.create(http.Response);
+    response.* = http.Response{
+        .status_code = status_line.status_code,
+        .protocol = status_line.protocol,
+        .headers = headers,
+        .body = body,
+        .arena = arena,
+    };
+    return response;
+}
+
+fn parseStatusLine(
+    status_line: []const u8,
+) ParseError!struct {
+    protocol: http.Protocol,
+    status_code: http.Status,
+} {
+    if (!std.mem.containsAtLeast(u8, status_line, 2, " ")) {
+        return error.InvalidStatusLine;
+    }
+    var els = std.mem.splitScalar(u8, status_line, ' ');
+    const protocol = http.Protocol.from(els.next().?) orelse
+        return error.InvalidProtocol;
+
+    const status_number = try std.fmt.parseInt(u10, els.next().?, 10);
+    const status_code = std.meta.intToEnum(
+        http.Status,
+        status_number,
+    ) catch unreachable;
+
+    return .{
+        .protocol = protocol,
+        .status_code = status_code,
+    };
+}
+
 test parseRequest {
     // GET /static/image.png HTTP/1.1
     // Host: www.example.com
@@ -128,7 +194,12 @@ test parseRequest {
         .{ "Accept", "text/html" },
         .{ "Connection", "close" },
     });
-    const reqstr = "GET /static/image.png HTTP/1.1\r\nHost: www.example.com\r\nUser-Agent: Mozilla/5.0\r\nAccept: text/html\r\nConnection: close\r\n\r\n";
+    const reqstr =
+        "GET /static/image.png HTTP/1.1\r\n" ++
+        "Host: www.example.com\r\n" ++
+        "User-Agent: Mozilla/5.0\r\n" ++
+        "Accept: text/html\r\n" ++
+        "Connection: close\r\n\r\n";
 
     const host = "127.0.0.1";
     var server = try http.Server.init(std.testing.allocator, host, 8080);
@@ -152,18 +223,48 @@ test parseRequest {
         const expected_value = expected_headers.values()[i];
 
         const actual = headers.get(expected_key).?;
-        std.testing.expect(
-            std.mem.eql(u8, actual, expected_value),
-        ) catch |err| {
-            std.debug.print(
-                "[{s}] expected={s}, got={s}\n",
-                .{ expected_key, expected_value, actual },
-            );
-            return err;
-        };
+        try std.testing.expectEqualStrings(actual, expected_value);
     }
 
     try std.testing.expect(req.body.len == 0);
+}
+
+// TODO: write tests for body parsing and just add more full
+// response and request parsing tests in general
+test parseResponse {
+    const expected_headers = comptime std.StaticStringMap([]const u8).initComptime(&.{
+        .{ "Content-Type", "image/png" },
+        .{ "Content-Length", "12345" },
+        .{ "Connection", "close" },
+        .{ "Server", "example-server" },
+    });
+    const resstr =
+        "HTTP/1.1 200 OK\r\n" ++
+        "Content-Type: image/png\r\n" ++
+        "Content-Length: 12345\r\n" ++
+        "Connection: close\r\n" ++
+        "Server: example-server\r\n\r\n";
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const res = try parseResponse(resstr, alloc);
+
+    try std.testing.expect(res.protocol == .http11);
+    try std.testing.expect(res.status_code == .ok);
+
+    const headers = &res.headers;
+    try std.testing.expect(expected_headers.keys().len == headers.count());
+
+    for (0..expected_headers.keys().len) |i| {
+        const expected_key = expected_headers.keys()[i];
+        const expected_value = expected_headers.values()[i];
+
+        const actual = headers.get(expected_key).?;
+        try std.testing.expectEqualStrings(actual, expected_value);
+    }
+
+    try std.testing.expect(res.body.len == 0);
 }
 
 test parseRequestLine {
@@ -184,6 +285,40 @@ test parseRequestLine {
 
     rle = parseRequestLine(alloc, "GET/test.html HTTP/1.1");
     try std.testing.expectError(error.InvalidRequestLine, rle);
+}
+
+test parseStatusLine {
+    const Test = struct {
+        status_line: []const u8,
+        expected: @typeInfo(@TypeOf(parseStatusLine)).@"fn".return_type.?,
+    };
+    var tests = [_]Test{
+        .{
+            .status_line = "HTTP/1.1 404 Not Found",
+            .expected = .{ .protocol = .http11, .status_code = .not_found },
+        },
+        .{
+            .status_line = "HTTP/2.5 200 OK",
+            .expected = error.InvalidProtocol,
+        },
+        .{
+            .status_line = "HTTP/1.1 404Not Found",
+            .expected = error.InvalidCharacter,
+        },
+        .{
+            .status_line = "HTTP/1.1 9000 Oops",
+            .expected = error.Overflow,
+        },
+        .{
+            .status_line = "HTTP/1.1 418 I'm a teapot",
+            .expected = .{ .protocol = .http11, .status_code = .teapot },
+        },
+    };
+    for (&tests, 0..) |*t, i| {
+        errdefer std.debug.print("Test #{} [{s}]\n", .{ i, t.status_line });
+        const sl = parseStatusLine(t.status_line);
+        try std.testing.expectEqual(sl, t.expected);
+    }
 }
 
 test parseHeader {

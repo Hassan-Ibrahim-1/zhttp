@@ -6,7 +6,7 @@ const builtin = @import("builtin");
 const http = @import("../http.zig");
 pub const Scheduler = @import("Scheduler.zig");
 
-const ready_list_len = 1024;
+const ready_list_len = 1024 * 10;
 
 pub const EventLoop = struct {
     mu: std.Thread.Mutex,
