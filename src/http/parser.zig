@@ -39,7 +39,8 @@ pub fn parseRequest(
         try headers.put(kv.key, kv.value);
     }
 
-    const body = lines.next() orelse "";
+    const body =
+        if (lines.next()) |b| try arena.dupe(u8, b) else "";
 
     return http.Request{
         .method = req_line.method,
@@ -126,8 +127,8 @@ fn validHeaderValueChar(ch: u8) bool {
 }
 
 pub fn parseResponse(
-    res: []const u8,
     arena: Allocator,
+    res: []const u8,
 ) ParseError!*http.Response {
     if (!std.mem.containsAtLeast(u8, res, 2, "\r\n")) {
         return error.InvalidHttpMessage;
@@ -144,7 +145,8 @@ pub fn parseResponse(
         try headers.put(kv.key, kv.value);
     }
 
-    const body = lines.next() orelse "";
+    const body =
+        if (lines.next()) |b| try arena.dupe(u8, b) else "";
 
     const response = try arena.create(http.Response);
     response.* = http.Response{
@@ -183,23 +185,151 @@ fn parseStatusLine(
 }
 
 test parseRequest {
-    // GET /static/image.png HTTP/1.1
-    // Host: www.example.com
-    // User-Agent: Mozilla/5.0
-    // Accept: text/html
-    // Connection: close
-    const expected_headers = comptime std.StaticStringMap([]const u8).initComptime(&.{
-        .{ "Host", "www.example.com" },
-        .{ "User-Agent", "Mozilla/5.0" },
-        .{ "Accept", "text/html" },
-        .{ "Connection", "close" },
-    });
-    const reqstr =
-        "GET /static/image.png HTTP/1.1\r\n" ++
-        "Host: www.example.com\r\n" ++
-        "User-Agent: Mozilla/5.0\r\n" ++
-        "Accept: text/html\r\n" ++
-        "Connection: close\r\n\r\n";
+    const Test = struct {
+        expected: struct {
+            method: http.Method,
+            protocol: http.Protocol,
+            url_path: []const u8,
+            headers: std.StaticStringMap([]const u8),
+            body: []const u8,
+        },
+        request_str: []const u8,
+    };
+
+    const tests = [_]Test{
+        .{
+            .request_str = "GET /static/image.png HTTP/1.1\r\n" ++
+                "Host: www.example.com\r\n" ++
+                "User-Agent: Mozilla/5.0\r\n" ++
+                "Accept: text/html\r\n" ++
+                "Connection: close\r\n\r\n",
+            .expected = .{
+                .method = .get,
+                .protocol = .http11,
+                .url_path = "/static/image.png",
+                .headers = .initComptime(&.{
+                    .{ "Host", "www.example.com" },
+                    .{ "User-Agent", "Mozilla/5.0" },
+                    .{ "Accept", "text/html" },
+                    .{ "Connection", "close" },
+                }),
+                .body = "",
+            },
+        },
+        .{
+            .request_str = "GET /static/image.png HTTP/1.1\r\n" ++
+                "Host: www.example.com\r\n" ++
+                "User-Agent: Mozilla/5.0\r\n" ++
+                "Accept: text/html\r\n" ++
+                "Connection: close\r\n\r\n",
+            .expected = .{
+                .method = .get,
+                .protocol = .http11,
+                .url_path = "/static/image.png",
+                .headers = .initComptime(&.{
+                    .{ "Host", "www.example.com" },
+                    .{ "User-Agent", "Mozilla/5.0" },
+                    .{ "Accept", "text/html" },
+                    .{ "Connection", "close" },
+                }),
+                .body = "",
+            },
+        },
+        .{
+            .request_str = "POST /login HTTP/1.1\r\n" ++
+                "Host: auth.example.com\r\n" ++
+                "User-Agent: ZigTester/1.0\r\n" ++
+                "Content-Type: application/x-www-form-urlencoded\r\n" ++
+                "Content-Length: 29\r\n" ++
+                "Connection: keep-alive\r\n\r\n" ++
+                "username=alice&password=1234",
+            .expected = .{
+                .method = .post,
+                .protocol = .http11,
+                .url_path = "/login",
+                .headers = .initComptime(&.{
+                    .{ "Host", "auth.example.com" },
+                    .{ "User-Agent", "ZigTester/1.0" },
+                    .{ "Content-Type", "application/x-www-form-urlencoded" },
+                    .{ "Content-Length", "29" },
+                    .{ "Connection", "keep-alive" },
+                }),
+                .body = "username=alice&password=1234",
+            },
+        },
+        .{
+            .request_str = "PUT /api/user/42 HTTP/1.1\r\n" ++
+                "Host: api.example.com\r\n" ++
+                "Content-Type: application/json\r\n" ++
+                "Content-Length: 25\r\n\r\n" ++
+                "{\"name\":\"Bob\",\"age\":30}",
+            .expected = .{
+                .method = .put,
+                .protocol = .http11,
+                .url_path = "/api/user/42",
+                .headers = .initComptime(&.{
+                    .{ "Host", "api.example.com" },
+                    .{ "Content-Type", "application/json" },
+                    .{ "Content-Length", "25" },
+                }),
+                .body = "{\"name\":\"Bob\",\"age\":30}",
+            },
+        },
+        .{
+            .request_str = "DELETE /posts/99 HTTP/1.1\r\n" ++
+                "Host: blog.example.com\r\n" ++
+                "Authorization: Bearer xyz123\r\n" ++
+                "User-Agent: ZigClient/2.0\r\n\r\n",
+            .expected = .{
+                .method = .delete,
+                .protocol = .http11,
+                .url_path = "/posts/99",
+                .headers = .initComptime(&.{
+                    .{ "Host", "blog.example.com" },
+                    .{ "Authorization", "Bearer xyz123" },
+                    .{ "User-Agent", "ZigClient/2.0" },
+                }),
+                .body = "",
+            },
+        },
+        .{
+            .request_str = "PATCH /account/settings HTTP/1.1\r\n" ++
+                "Host: user.example.org\r\n" ++
+                "Content-Type: application/json\r\n" ++
+                "X-Custom-Flag: true\r\n" ++
+                "Content-Length: 22\r\n\r\n" ++
+                "{\"theme\":\"darkmode\"}",
+            .expected = .{
+                .method = .patch,
+                .protocol = .http11,
+                .url_path = "/account/settings",
+                .headers = .initComptime(&.{
+                    .{ "Host", "user.example.org" },
+                    .{ "Content-Type", "application/json" },
+                    .{ "X-Custom-Flag", "true" },
+                    .{ "Content-Length", "22" },
+                }),
+                .body = "{\"theme\":\"darkmode\"}",
+            },
+        },
+        .{
+            .request_str = "HEAD /ping HTTP/1.1\r\n" ++
+                "Host: healthcheck.example.net\r\n" ++
+                "User-Agent: MonitorBot/1.0\r\n" ++
+                "Connection: close\r\n\r\n",
+            .expected = .{
+                .method = .head,
+                .protocol = .http11,
+                .url_path = "/ping",
+                .headers = .initComptime(&.{
+                    .{ "Host", "healthcheck.example.net" },
+                    .{ "User-Agent", "MonitorBot/1.0" },
+                    .{ "Connection", "close" },
+                }),
+                .body = "",
+            },
+        },
+    };
 
     const host = "127.0.0.1";
     var server = try http.Server.init(std.testing.allocator, host, 8080);
@@ -209,62 +339,212 @@ test parseRequest {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    const req = try parseRequest(&server, reqstr, alloc);
+    for (&tests, 0..) |*t, i| {
+        errdefer std.debug.print(
+            "Test #{} failed. Request string is {s}\n",
+            .{ i, t.request_str },
+        );
+        const req = try parseRequest(&server, t.request_str, alloc);
 
-    try std.testing.expect(req.method == .get);
-    try std.testing.expect(req.protocol == .http11);
-    try std.testing.expect(req.url.path.eql("/static/image.png"));
+        try std.testing.expect(req.method == t.expected.method);
+        try std.testing.expect(req.protocol == t.expected.protocol);
+        try std.testing.expectEqualStrings(req.url.path.str, t.expected.url_path);
 
-    const headers = &req.headers;
-    try std.testing.expect(expected_headers.keys().len == headers.count());
+        const headers = &req.headers;
+        try std.testing.expect(t.expected.headers.keys().len == headers.count());
 
-    for (0..expected_headers.keys().len) |i| {
-        const expected_key = expected_headers.keys()[i];
-        const expected_value = expected_headers.values()[i];
+        for (0..t.expected.headers.keys().len) |j| {
+            const expected_key = t.expected.headers.keys()[j];
+            const expected_value = t.expected.headers.values()[j];
 
-        const actual = headers.get(expected_key).?;
-        try std.testing.expectEqualStrings(actual, expected_value);
+            const actual = headers.get(expected_key) orelse {
+                std.debug.print("Key {s} not found in headers\n", .{expected_key});
+                return error.TestFailed;
+            };
+            try std.testing.expectEqualStrings(actual, expected_value);
+        }
+        try std.testing.expectEqualStrings(req.body, t.expected.body);
     }
-
-    try std.testing.expect(req.body.len == 0);
 }
 
 // TODO: write tests for body parsing and just add more full
 // response and request parsing tests in general
 test parseResponse {
-    const expected_headers = comptime std.StaticStringMap([]const u8).initComptime(&.{
-        .{ "Content-Type", "image/png" },
-        .{ "Content-Length", "12345" },
-        .{ "Connection", "close" },
-        .{ "Server", "example-server" },
-    });
-    const resstr =
-        "HTTP/1.1 200 OK\r\n" ++
-        "Content-Type: image/png\r\n" ++
-        "Content-Length: 12345\r\n" ++
-        "Connection: close\r\n" ++
-        "Server: example-server\r\n\r\n";
+    const Test = struct {
+        expected: struct {
+            status_code: http.Status,
+            protocol: http.Protocol,
+            headers: std.StaticStringMap([]const u8),
+            body: []const u8,
+        },
+        response_str: []const u8,
+    };
+
+    var tests = [_]Test{
+        .{
+            .response_str = "HTTP/1.1 200 OK\r\n" ++
+                "Content-Type: image/png\r\n" ++
+                "Content-Length: 12345\r\n" ++
+                "Connection: close\r\n" ++
+                "Server: example-server\r\n\r\n",
+            .expected = .{
+                .status_code = .ok,
+                .protocol = .http11,
+                .headers = .initComptime(&.{
+                    .{ "Content-Type", "image/png" },
+                    .{ "Content-Length", "12345" },
+                    .{ "Connection", "close" },
+                    .{ "Server", "example-server" },
+                }),
+                .body = "",
+            },
+        },
+        .{
+            .response_str = "HTTP/1.1 200 OK\r\n" ++
+                "Content-Type: image/png\r\n" ++
+                "Content-Length: 12345\r\n" ++
+                "Connection: close\r\n" ++
+                "Server: example-server\r\n\r\n",
+            .expected = .{
+                .status_code = .ok,
+                .protocol = .http11,
+                .headers = .initComptime(&.{
+                    .{ "Content-Type", "image/png" },
+                    .{ "Content-Length", "12345" },
+                    .{ "Connection", "close" },
+                    .{ "Server", "example-server" },
+                }),
+                .body = "",
+            },
+        },
+        .{
+            .response_str = "HTTP/1.1 404 Not Found\r\n" ++
+                "Content-Type: text/html\r\n" ++
+                "Content-Length: 22\r\n" ++
+                "Connection: close\r\n\r\n" ++
+                "<h1>Not Found</h1>",
+            .expected = .{
+                .status_code = .not_found,
+                .protocol = .http11,
+                .headers = .initComptime(&.{
+                    .{ "Content-Type", "text/html" },
+                    .{ "Content-Length", "22" },
+                    .{ "Connection", "close" },
+                }),
+                .body = "<h1>Not Found</h1>",
+            },
+        },
+        .{
+            .response_str = "HTTP/1.1 500 Internal Server Error\r\n" ++
+                "Content-Type: text/plain\r\n" ++
+                "Content-Length: 17\r\n" ++
+                "Connection: close\r\n\r\n" ++
+                "Server failure.\n",
+            .expected = .{
+                .status_code = .internal_server_error,
+                .protocol = .http11,
+                .headers = .initComptime(&.{
+                    .{ "Content-Type", "text/plain" },
+                    .{ "Content-Length", "17" },
+                    .{ "Connection", "close" },
+                }),
+                .body = "Server failure.\n",
+            },
+        },
+        .{
+            .response_str = "HTTP/1.1 201 Created\r\n" ++
+                "Content-Type: application/json\r\n" ++
+                "Content-Length: 27\r\n" ++
+                "Location: /api/item/42\r\n\r\n" ++
+                "{\"id\":42,\"status\":\"ok\"}",
+            .expected = .{
+                .status_code = .created,
+                .protocol = .http11,
+                .headers = .initComptime(&.{
+                    .{ "Content-Type", "application/json" },
+                    .{ "Content-Length", "27" },
+                    .{ "Location", "/api/item/42" },
+                }),
+                .body = "{\"id\":42,\"status\":\"ok\"}",
+            },
+        },
+        .{
+            .response_str = "HTTP/1.1 204 No Content\r\n" ++
+                "Content-Length: 0\r\n" ++
+                "Connection: keep-alive\r\n\r\n",
+            .expected = .{
+                .status_code = .no_content,
+                .protocol = .http11,
+                .headers = .initComptime(&.{
+                    .{ "Content-Length", "0" },
+                    .{ "Connection", "keep-alive" },
+                }),
+                .body = "",
+            },
+        },
+        .{
+            .response_str = "HTTP/1.1 301 Moved Permanently\r\n" ++
+                "Location: https://new.example.com/\r\n" ++
+                "Content-Length: 0\r\n" ++
+                "Connection: close\r\n\r\n",
+            .expected = .{
+                .status_code = .moved_permanently,
+                .protocol = .http11,
+                .headers = .initComptime(&.{
+                    .{ "Location", "https://new.example.com/" },
+                    .{ "Content-Length", "0" },
+                    .{ "Connection", "close" },
+                }),
+                .body = "",
+            },
+        },
+        .{
+            .response_str = "HTTP/1.1 403 Forbidden\r\n" ++
+                "Content-Type: text/plain\r\n" ++
+                "Content-Length: 13\r\n\r\n" ++
+                "Access denied",
+            .expected = .{
+                .status_code = .forbidden,
+                .protocol = .http11,
+                .headers = .initComptime(&.{
+                    .{ "Content-Type", "text/plain" },
+                    .{ "Content-Length", "13" },
+                }),
+                .body = "Access denied",
+            },
+        },
+    };
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    const res = try parseResponse(resstr, alloc);
 
-    try std.testing.expect(res.protocol == .http11);
-    try std.testing.expect(res.status_code == .ok);
+    for (&tests, 0..) |*t, i| {
+        errdefer std.debug.print(
+            "Test #{} failed. Response string is {s}\n",
+            .{ i, t.response_str },
+        );
 
-    const headers = &res.headers;
-    try std.testing.expect(expected_headers.keys().len == headers.count());
+        const res = try parseResponse(alloc, t.response_str);
 
-    for (0..expected_headers.keys().len) |i| {
-        const expected_key = expected_headers.keys()[i];
-        const expected_value = expected_headers.values()[i];
+        try std.testing.expect(res.status_code == t.expected.status_code);
+        try std.testing.expect(res.protocol == t.expected.protocol);
 
-        const actual = headers.get(expected_key).?;
-        try std.testing.expectEqualStrings(actual, expected_value);
+        const headers = &res.headers;
+        try std.testing.expect(t.expected.headers.keys().len == headers.count());
+
+        for (0..t.expected.headers.keys().len) |j| {
+            const expected_key = t.expected.headers.keys()[j];
+            const expected_value = t.expected.headers.values()[j];
+
+            const actual = headers.get(expected_key) orelse {
+                std.debug.print("Key {s} not found in headers\n", .{expected_key});
+                return error.TestFailed;
+            };
+            try std.testing.expectEqualStrings(actual, expected_value);
+        }
+        try std.testing.expectEqualStrings(res.body, t.expected.body);
     }
-
-    try std.testing.expect(res.body.len == 0);
 }
 
 test parseRequestLine {

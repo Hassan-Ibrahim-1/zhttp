@@ -16,6 +16,8 @@ pub const Server = @import("Server.zig");
 
 const log = std.log.scoped(.http);
 
+pub const default_port: u16 = 80;
+
 pub const ConnectionNode = std.DoublyLinkedList(Client).Node;
 
 pub const Method = enum {
@@ -204,10 +206,6 @@ pub const HttpReader = struct {
         self.buf.deinit();
     }
 
-    pub fn dump(self: *const HttpReader) void {
-        debug.dump("dump.txt", self.buf.items[0..self.pos], .write);
-    }
-
     pub fn readMessage(self: *HttpReader, alloc: Allocator) ![]u8 {
         if (self.buf.items.len == 0) {
             try self.ensureSpace(512);
@@ -222,9 +220,7 @@ pub const HttpReader = struct {
     }
 
     fn readSocket(self: *HttpReader) !void {
-        const pos = self.pos;
-
-        const n = try posix.read(self.socket, self.buf.items[pos..]);
+        const n = try posix.read(self.socket, self.buf.items[self.pos..]);
         if (n == 0) {
             if (self.pos == self.buf.items.len) {
                 try self.ensureSpace(self.buf.capacity * 2);
@@ -232,7 +228,7 @@ pub const HttpReader = struct {
             }
             return error.Closed;
         }
-        self.pos = pos + n;
+        self.pos += n;
     }
 
     // FIXME: verify that the Content-Length header is actually
@@ -269,8 +265,9 @@ pub const HttpReader = struct {
         const index = std.mem.indexOf(u8, unprocessed, "\r\n\r\n");
         if (index) |i| {
             const head_end = i + 4;
-            const b = try self.extractBody(head_end - self.start);
-            self.start += head_end;
+            const head_len = head_end - self.start;
+            const b = try self.extractBody(head_len);
+            self.start += head_len;
             return b;
         }
         return null;
@@ -297,12 +294,14 @@ pub const HttpReader = struct {
         // try self.sendContinue();
 
         while (true) {
-            if (self.pos - self.start >= body_len) {
+            if (self.pos - self.start >= body_len + head_len) {
+                const end = self.start + body_len + head_len;
                 const start = self.start;
-                self.start += body_len + head_len;
-                return self.buf.items[start..self.start];
+                self.start += body_len;
+                return self.buf.items[start..end];
             }
             try self.readSocket();
+            log.info("reading from socket again", .{});
         }
         return msg;
     }
