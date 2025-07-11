@@ -271,10 +271,13 @@ const KQueue = struct {
         });
     }
 
-    fn writeMode(self: *KQueue, node: *http.ConnectionNode) !void {
+    fn setIoMode(self: *KQueue, node: *http.ConnectionNode, mode: Mode) !void {
+        std.debug.assert(node.data.io_mode != mode);
+        node.data.io_mode = mode;
+
         try self.queueChange(.{
             .ident = @intCast(node.data.socket),
-            .filter = posix.system.EVFILT.READ,
+            .filter = if (mode == .write) posix.system.EVFILT.READ else posix.system.EVFILT.WRITE,
             .flags = posix.system.EV.DISABLE,
             .fflags = 0,
             .data = 0,
@@ -283,45 +286,13 @@ const KQueue = struct {
 
         try self.queueChange(.{
             .ident = @intCast(node.data.socket),
+            .filter = if (mode == .write) posix.system.EVFILT.WRITE else posix.system.EVFILT.READ,
             .flags = posix.system.EV.ENABLE,
-            .filter = posix.system.EVFILT.WRITE,
             .fflags = 0,
             .data = 0,
             .udata = @intFromPtr(node),
         });
     }
-
-    fn setIoMode(self: *KQueue, node: *http.ConnectionNode, mode: Mode) !void {
-        std.debug.assert(node.data.io_mode != mode);
-        node.data.io_mode = mode;
-        switch (node.data.io_mode) {
-            .write => try self.writeMode(node),
-            .read => try self.readMode(node),
-        }
-    }
-
-    // fn setIoMode(self: *KQueue, node: *http.ConnectionNode, mode: Mode) !void {
-    //     std.debug.assert(node.data.io_mode != mode);
-    //     node.data.io_mode = mode;
-    //
-    //     try self.queueChange(.{
-    //         .ident = @intCast(node.data.socket),
-    //         .filter = if (mode == .write) posix.system.EVFILT.READ else posix.system.EVFILT.WRITE,
-    //         .flags = posix.system.EV.DISABLE,
-    //         .fflags = 0,
-    //         .data = 0,
-    //         .udata = 0,
-    //     });
-    //
-    //     try self.queueChange(.{
-    //         .ident = @intCast(node.data.socket),
-    //         .filter = if (mode == .write) posix.system.EVFILT.WRITE else posix.system.EVFILT.READ,
-    //         .flags = posix.system.EV.ENABLE,
-    //         .fflags = 0,
-    //         .data = 0,
-    //         .udata = @intFromPtr(node),
-    //     });
-    // }
 
     fn queueChange(self: *KQueue, event: posix.Kevent) !void {
         _ = try posix.kevent(self.kfd, &.{event}, &.{}, null);
