@@ -488,7 +488,7 @@ pub const FileServer = struct {
         var iter = self.dir.iterate();
         while (try iter.next()) |file| {
             if (file.kind == .file and path.eql(file.name)) {
-                if (!self.isValid(file.name)) {
+                if (!self.isValidFile(file.name)) {
                     log.info("request for excluded file {s} sending 404", .{file.name});
                     break;
                 }
@@ -514,7 +514,7 @@ pub const FileServer = struct {
         return notFound(res, path.str);
     }
 
-    fn isValid(self: *const FileServer, file_name: []const u8) bool {
+    fn isValidFile(self: *const FileServer, file_name: []const u8) bool {
         const options = self.options orelse return true;
         for (options.exclude) |pattern| {
             if (matchFilePattern(pattern, file_name)) return false;
@@ -915,11 +915,11 @@ test "FileServer.isValid" {
         for (t.files) |file| {
             errdefer std.debug.print(
                 "[{s}] expected={} got={}\n",
-                .{ file.name, file.valid, fs.isValid(file.name) },
+                .{ file.name, file.valid, fs.isValidFile(file.name) },
             );
             try std.testing.expectEqual(
                 file.valid,
-                fs.isValid(file.name),
+                fs.isValidFile(file.name),
             );
         }
     }
