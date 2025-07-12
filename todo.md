@@ -99,3 +99,35 @@ TOMORROW:
     mocking
         a function that takes in a type and calls every function in it that starts with test
         helper functions that create a server, add handlers etc
+        maybe setup a mock directory
+    
+        full end to end tests. there should be asserts along the way, things that are
+        impossible to happen should never happen. 
+
+        These should work on macos as well!!
+        what tests to support:
+            * async/io: send multiple requests simultaneously (1000s) and expect valid responses
+              within a reasonable time frame
+            * creating the server and listening on a socket
+            * adding handlers
+            * handling errors and bad requests appropriately
+            * when rfc is fully implemented, make sure all the edge-cases / expected behavior is covered
+                by this i mean things like the Expect and Connection headers
+            * what should happen when no handlers are present?
+            * HttpReader: have the client send out little chunks of an http message at a time and have it send 
+              out multiple requests in a row from the same port. (have to implement Connection: Keep-alive for this)
+            * HttpWriter: just make sure the right response is sent back
+            * proper cleanup of resources, make sure nothing is left unfreed
+            * make sure every socket is closed properly
+            * send invalid headers to the server. stuff like "H !@#: Bad&*Header"
+            * make sure clients are properly timed out (when timeouts are actually implemented)
+            * send invalid http messages. just random streams of bytes and the server
+              should properly respond without crashing. the connection should just be severed
+            * test custom handlers like FileServer and StripPrefix. make sure they actually work
+            * send invalid mime types. server should recognize this
+            * send bad http requests that can mess up the parser. server should response approriately
+            * make sure the server can never send an invalid Response
+            * make sure handler deinit works.
+
+        benchmark:
+            figure out how to measure requests / second
