@@ -78,7 +78,6 @@ pub fn tryHandle(
     handler: Handler,
 ) Allocator.Error!void {
     const r = try self.arena.allocator().dupe(u8, route);
-
     self.handlers_mu.lock();
     defer self.handlers_mu.unlock();
     try self.handlers.put(r, handler);

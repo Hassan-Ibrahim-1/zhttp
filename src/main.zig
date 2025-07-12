@@ -12,7 +12,7 @@ pub fn main() !void {
     const alloc = gpa.allocator();
 
     if (config.mock) {
-        return mock.run(alloc);
+        return mock.run(config);
     }
 
     var server = try http.Server.init(alloc, "127.0.0.1", 8080);

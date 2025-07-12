@@ -11,7 +11,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    const mock = b.option(bool, "mock", "build mock tests") orelse false;
+    const mock = b.option(bool, "mock", "build mock tests") orelse true;
 
     const options = b.addOptions();
     options.addOption(bool, "mock", mock);

@@ -39,7 +39,10 @@ pub fn get(
     const req_str = try std.fmt.allocPrint(arena, "{}", .{req});
     defer arena.free(req_str);
 
-    var writer = http.HttpWriter{ .buf = req_str, .socket = stream.handle };
+    var writer = http.HttpWriter{
+        .buf = req_str,
+        .socket = stream.handle,
+    };
     try writer.write();
 
     var reader = http.HttpReader.init(arena, stream.handle);
