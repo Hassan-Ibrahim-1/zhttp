@@ -64,7 +64,7 @@ GOAL:
         - changing font
 
 TOMORROW:
-    KQueue
+    -- KQueue
 
     make isPrefixOf and findBestRoute better. they are really inefficient and dirty
     fix up the dirty code in FileServer and StripPrefix, some repeated stuff, etc
@@ -78,7 +78,7 @@ TOMORROW:
         the entire thing should take at most 2 seconds to finish, it should not compound
         mocking would be great for this but get some basic concurrency done first
 
-    a client that can make requests a server
+    -- a client that can make requests a server
     a mocking library that can spin up a server and client.
         use this to test functions that require sockets
     maybe this is possible in the normal testing stuff
@@ -91,6 +91,11 @@ TOMORROW:
     listening and cleans up appropriately. im not getting any mem leak info 
     because of this.
     
-    implement RFC properly. basic http is done but headers like
-    Connection: keep-alive, Expect: 100-Continue, are not handled properly
+    implement RFC properly. actually go through it properly
+        headers like Connection: keep-alive, Expect: 100-Continue, are not handled properly
+        urls are not done right, things like the connect and options method can have different url formats
+        much much more
 
+    mocking
+        a function that takes in a type and calls every function in it that starts with test
+        helper functions that create a server, add handlers etc

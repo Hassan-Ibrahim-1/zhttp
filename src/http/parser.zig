@@ -44,14 +44,19 @@ pub fn parseRequest(
 
     return http.Request{
         .method = req_line.method,
-        // BUG: what happens if the url is already a full url
-        .url = try .fromRelative(
-            arena,
-            req_line.url_raw,
-            .http11,
-            server.host,
-            server.address.getPort(),
-        ),
+        .url = url: {
+            if (http.Url.isRelative(req_line.url_raw)) {
+                break :url try http.Url.fromRelative(
+                    arena,
+                    req_line.url_raw,
+                    .http11,
+                    server.host,
+                    server.address.getPort(),
+                );
+            } else {
+                break :url http.Url.init(req_line.url_raw);
+            }
+        },
         .protocol = req_line.protocol,
         .arena = arena,
         .body = body,
@@ -329,6 +334,47 @@ test parseRequest {
                 .body = "",
             },
         },
+        .{
+            .request_str = "GET http://www.example.com/static/image.png HTTP/1.1\r\n" ++
+                "Host: www.example.com\r\n" ++
+                "User-Agent: Mozilla/5.0\r\n" ++
+                "Accept: text/html\r\n" ++
+                "Connection: close\r\n\r\n",
+            .expected = .{
+                .method = .get,
+                .protocol = .http11,
+                .url_path = "/static/image.png",
+                .headers = .initComptime(&.{
+                    .{ "Host", "www.example.com" },
+                    .{ "User-Agent", "Mozilla/5.0" },
+                    .{ "Accept", "text/html" },
+                    .{ "Connection", "close" },
+                }),
+                .body = "",
+            },
+        },
+        .{
+            .request_str = "POST /login HTTP/1.1\r\n" ++
+                "Host: auth.example.com\r\n" ++
+                "User-Agent: ZigTester/1.0\r\n" ++
+                "Content-Type: application/x-www-form-urlencoded\r\n" ++
+                "Content-Length: 29\r\n" ++
+                "Connection: keep-alive\r\n\r\n" ++
+                "username=alice&password=1234",
+            .expected = .{
+                .method = .post,
+                .protocol = .http11,
+                .url_path = "/login",
+                .headers = .initComptime(&.{
+                    .{ "Host", "auth.example.com" },
+                    .{ "User-Agent", "ZigTester/1.0" },
+                    .{ "Content-Type", "application/x-www-form-urlencoded" },
+                    .{ "Content-Length", "29" },
+                    .{ "Connection", "keep-alive" },
+                }),
+                .body = "username=alice&password=1234",
+            },
+        },
     };
 
     const host = "127.0.0.1";
@@ -340,11 +386,11 @@ test parseRequest {
     const alloc = arena.allocator();
 
     for (&tests, 0..) |*t, i| {
-        errdefer std.debug.print(
-            "Test #{} failed. Request string is {s}\n",
-            .{ i, t.request_str },
-        );
         const req = try parseRequest(&server, t.request_str, alloc);
+        errdefer std.debug.print(
+            "Test #{} failed. Request string is\n{s}\nParsed request is\n{}",
+            .{ i, t.request_str, req },
+        );
 
         try std.testing.expect(req.method == t.expected.method);
         try std.testing.expect(req.protocol == t.expected.protocol);
@@ -521,7 +567,7 @@ test parseResponse {
 
     for (&tests, 0..) |*t, i| {
         errdefer std.debug.print(
-            "Test #{} failed. Response string is {s}\n",
+            "Test #{} failed. Response string is\n{s}\n",
             .{ i, t.response_str },
         );
 

@@ -11,6 +11,13 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const mock = b.option(bool, "mock", "build mock tests") orelse false;
+
+    const options = b.addOptions();
+    options.addOption(bool, "mock", mock);
+
+    exe_mod.addOptions("config", options);
+
     const exe = b.addExecutable(.{
         .name = "zhttp",
         .root_module = exe_mod,

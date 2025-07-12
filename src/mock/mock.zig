@@ -9,10 +9,6 @@ pub fn run(alloc: Allocator) !void {
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
 
-    const res = try request.request(
-        arena.allocator(),
-        "example.com",
-        null,
-    );
+    const res = try request.get(arena.allocator(), "http://localhost/lorem", 8080);
     log.info("{}", .{res});
 }

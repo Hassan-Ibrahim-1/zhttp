@@ -1,6 +1,8 @@
 const std = @import("std");
 const log = std.log;
 
+const config = @import("config");
+
 pub const http = @import("http/http.zig");
 const mock = @import("mock/mock.zig");
 
@@ -9,32 +11,33 @@ pub fn main() !void {
     defer std.debug.assert(gpa.deinit() == .ok);
     const alloc = gpa.allocator();
 
-    try mock.run(alloc);
+    if (config.mock) {
+        return mock.run(alloc);
+    }
 
-    //
-    // var server = try http.Server.init(alloc, "127.0.0.1", 8080);
-    // defer {
-    //     server.close();
-    //     server.deinit();
-    // }
-    //
-    // std.log.info("listening on {}", .{server.address});
-    //
-    // var router = http.Router.init(server.alloc);
-    // router.handleFn("/", index);
-    //
-    // var fs = try http.FileServer.init("res/", null);
-    //
-    // var sp = http.StripPrefix{
-    //     .prefix = "/res/",
-    //     .underlying = fs.handler(),
-    // };
-    // router.handle("/res/", sp.handler());
-    // router.handleFn("/submit-form", submitForm);
-    // router.handleFn("/file", file);
-    // router.handleFn("/lorem", lorem);
-    //
-    // try server.listen(&router);
+    var server = try http.Server.init(alloc, "127.0.0.1", 8080);
+    defer {
+        server.close();
+        server.deinit();
+    }
+
+    std.log.info("listening on {}", .{server.address});
+
+    var router = http.Router.init(server.alloc);
+    router.handleFn("/", index);
+
+    var fs = try http.FileServer.init("res/", null);
+
+    var sp = http.StripPrefix{
+        .prefix = "/res/",
+        .underlying = fs.handler(),
+    };
+    router.handle("/res/", sp.handler());
+    router.handleFn("/submit-form", submitForm);
+    router.handleFn("/file", file);
+    router.handleFn("/lorem", lorem);
+
+    try server.listen(&router);
 }
 
 fn index(res: *http.Response, req: *const http.Request) !void {

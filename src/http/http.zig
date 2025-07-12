@@ -97,22 +97,31 @@ pub const Path = struct {
     }
 };
 
-pub const UrlParseError = std.fmt.BufPrintError || Allocator.Error;
+pub const UrlParseError =
+    error{UrlNotRelative} ||
+    std.fmt.BufPrintError ||
+    Allocator.Error;
 
 pub const Url = struct {
     /// this must always be an absolute url
     raw: []const u8,
+    /// begins with a forward slash
     path: Path,
+    /// does NOT contain any trailing forward slash
+    host: []const u8,
+    port: ?u16,
 
-    /// hst must not contain an ending /
+    /// host must not contain an ending /
     /// relative must start with a /
     pub fn fromRelative(
         alloc: Allocator,
         relative: []const u8,
         protocol: Protocol,
-        hst: []const u8,
-        prt: ?u16,
+        host: []const u8,
+        port: ?u16,
     ) UrlParseError!Url {
+        if (!isRelative(relative)) return error.UrlNotRelative;
+
         // TODO: support queries in fromRelative
         const scheme = switch (protocol) {
             .http11 => "http",
@@ -120,32 +129,49 @@ pub const Url = struct {
 
         // u16 can have at most 5 digits
         const port_str: ?[]const u8 = str: {
-            if (prt) |p| {
+            if (port) |p| {
                 var buf: [5]u8 = undefined;
                 break :str try std.fmt.bufPrint(&buf, "{}", .{p});
             }
             break :str null;
         };
+        // TODO: figure out if Url.raw is needed
+        // all the relevant information for a url is already stored
+        // could remove an extra unnecessary allocation
         const raw = try std.mem.concat(alloc, u8, &.{
             scheme,
             "://",
-            hst,
-            if (prt != null) ":" else "",
+            host,
+            if (port != null) ":" else "",
             port_str orelse "",
             relative,
         });
-        return .init(raw);
+        return Url{
+            .raw = raw,
+            .host = host,
+            .port = port,
+            .path = .{ .str = relative },
+        };
+    }
+
+    pub fn isRelative(raw: []const u8) bool {
+        return !std.mem.containsAtLeast(u8, raw, 1, "://");
     }
 
     pub fn init(raw: []const u8) Url {
         // TODO: create a hashmap of queries
-        // FIX: extractPath should return an error
-        return .{ .raw = raw, .path = extractPath(raw) };
+        // FIX: extract functions should return an error
+        return .{
+            .raw = raw,
+            .path = extractPath(raw),
+            .host = extractHost(raw),
+            .port = extractPort(raw) catch unreachable,
+        };
     }
 
-    pub fn host(self: *const Url) []const u8 {
+    fn extractHost(raw: []const u8) []const u8 {
         // remove scheme
-        var it = std.mem.splitSequence(u8, self.raw, "://");
+        var it = std.mem.splitSequence(u8, raw, "://");
         _ = it.next().?;
         const s1 = it.next().?;
 
@@ -156,9 +182,9 @@ pub const Url = struct {
         return s1[0..std.mem.indexOf(u8, s1, "/").?];
     }
 
-    pub fn port(self: *const Url) std.fmt.ParseIntError!?u16 {
+    fn extractPort(raw: []const u8) std.fmt.ParseIntError!?u16 {
         // remove scheme
-        var it = std.mem.splitSequence(u8, self.raw, "://");
+        var it = std.mem.splitSequence(u8, raw, "://");
         _ = it.next().?;
         const s1 = it.next().?;
 
@@ -301,7 +327,6 @@ pub const HttpReader = struct {
                 return self.buf.items[start..end];
             }
             try self.readSocket();
-            log.info("reading from socket again", .{});
         }
         return msg;
     }
@@ -414,8 +439,8 @@ pub const StripPrefix = struct {
                 res.arena,
                 new_path,
                 .http11,
-                req.url.host(),
-                try req.url.port(),
+                req.url.host,
+                req.url.port,
             );
             try self.underlying.handle(res, &new_req);
             // if not found, then send a better error message with the proper path and not the stripped one
@@ -661,13 +686,13 @@ test Url {
         errdefer {
             std.debug.print("Failed test {}\n", .{i});
             std.debug.print("[path] got={s} expected={s}\n", .{ url.path.str, t.path });
-            std.debug.print("[host] got={s} expected={s}\n", .{ url.host(), t.host });
-            std.debug.print("[port] got={!?} expected={?}\n", .{ url.port(), t.port });
+            std.debug.print("[host] got={s} expected={s}\n", .{ url.host, t.host });
+            std.debug.print("[port] got={?} expected={?}\n", .{ url.port, t.port });
         }
 
         try std.testing.expect(url.path.eql(t.path));
-        try std.testing.expect(std.mem.eql(u8, url.host(), t.host));
-        try std.testing.expect(try url.port() == t.port);
+        try std.testing.expect(std.mem.eql(u8, url.host, t.host));
+        try std.testing.expect(url.port == t.port);
     }
 }
 
@@ -736,6 +761,36 @@ test "Url.fromRelative" {
     for (&tests) |*t| {
         const url = try Url.fromRelative(alloc, t.relative, t.protocol, t.host, t.port);
         try std.testing.expect(std.mem.eql(u8, url.raw, t.expected));
+    }
+}
+
+test "Url.isRelative" {
+    const Test = struct {
+        raw: []const u8,
+        expected: bool,
+    };
+    const tests = [_]Test{
+        .{
+            .raw = "http://example.com",
+            .expected = false,
+        },
+        .{
+            .raw = "/image.png",
+            .expected = true,
+        },
+        .{
+            .raw = "/",
+            .expected = true,
+        },
+        .{
+            .raw = "http://google.com/image.png",
+            .expected = false,
+        },
+    };
+
+    for (&tests) |*t| {
+        const rel = Url.isRelative(t.raw);
+        try std.testing.expectEqual(rel, t.expected);
     }
 }
 
