@@ -58,17 +58,28 @@ pub fn handleFn(
         req: *const Request,
     ) anyerror!void,
 ) void {
+    self.tryHandleFn(route, func) catch unreachable;
+}
+
+pub fn tryHandleFn(
+    self: *Router,
+    route: []const u8,
+    comptime func: *const fn (
+        res: *Response,
+        req: *const Request,
+    ) anyerror!void,
+) !void {
     const T = struct {
         fn callHandler(_: ?*anyopaque, res: *Response, req: *const Request) !void {
             return func(res, req);
         }
     };
-    self.tryHandle(route, .{
+    try self.tryHandle(route, .{
         .ptr = null,
         .vtable = &.{
             .handle = T.callHandler,
         },
-    }) catch unreachable;
+    });
 }
 
 /// if the same route is registered twice, only the first one is used

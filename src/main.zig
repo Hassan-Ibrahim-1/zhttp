@@ -4,7 +4,10 @@ const log = std.log;
 const config = @import("config");
 
 pub const http = @import("http/http.zig");
+const http_mock = @import("http/http_mock.zig");
 const mock = @import("mock/mock.zig");
+
+var server: http.Server = undefined;
 
 pub fn main() !void {
     var gpa: std.heap.DebugAllocator(.{}) = .init;
@@ -12,10 +15,10 @@ pub fn main() !void {
     const alloc = gpa.allocator();
 
     if (config.mock) {
-        return mock.run(config);
+        return mock.run(http_mock.tests);
     }
 
-    var server = try http.Server.init(alloc, "127.0.0.1", 8080);
+    server = try http.Server.init(alloc, "127.0.0.1", 8080);
     defer {
         server.close();
         server.deinit();
@@ -32,12 +35,18 @@ pub fn main() !void {
         .prefix = "/res/",
         .underlying = fs.handler(),
     };
+
     router.handle("/res/", sp.handler());
     router.handleFn("/submit-form", submitForm);
     router.handleFn("/file", file);
     router.handleFn("/lorem", lorem);
 
-    try server.listen(&router);
+    const thread = try server.listenInNewThread(&router);
+    try thread.setName("server thread");
+    thread.detach();
+
+    server.stopped_listening.wait();
+    log.info("done", .{});
 }
 
 fn index(res: *http.Response, req: *const http.Request) !void {
@@ -48,6 +57,7 @@ fn index(res: *http.Response, req: *const http.Request) !void {
     res.status_code = .ok;
     try res.headers.put("Content-Type", "text/html");
     try http.serveFile(res, "res/index.html");
+    server.stop();
 }
 
 fn submitForm(res: *http.Response, req: *const http.Request) !void {

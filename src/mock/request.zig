@@ -5,10 +5,10 @@ const http = @import("../http/http.zig");
 const log = std.log.scoped(.request);
 
 /// url must be formatted like so http://hostname/path/more
+/// there must not be any ports
 pub fn get(
     arena: std.mem.Allocator,
     url: []const u8,
-    port: ?u16,
 ) !*http.Response {
     const req = http.Request{
         .method = .get,
@@ -22,7 +22,7 @@ pub fn get(
     const addr_list = try std.net.getAddressList(
         arena,
         req.url.host,
-        port orelse http.default_port,
+        req.url.port orelse http.default_port,
     );
     defer addr_list.deinit();
 

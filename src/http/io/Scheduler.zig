@@ -54,7 +54,7 @@ queue: Queue(Context),
 queue_mu: std.Thread.Mutex,
 queue_cond: std.Thread.Condition,
 workers: [worker_count]std.Thread,
-running: bool,
+running: std.atomic.Value(bool),
 
 dispatch: ClientDispatchFn,
 
@@ -67,7 +67,7 @@ pub fn init(
         .queue_mu = .{},
         .queue_cond = .{},
         .workers = undefined,
-        .running = false,
+        .running = .init(false),
         .dispatch = dispatch,
     };
 }
@@ -77,14 +77,25 @@ pub fn deinit(self: *Scheduler) void {
 }
 
 pub fn start(self: *Scheduler) !void {
-    self.running = true;
-    for (&self.workers) |*w| {
+    self.running.store(true, .unordered);
+
+    const names = comptime names: {
+        var names: [worker_count][]const u8 = undefined;
+        for (0..worker_count) |i| {
+            const name = std.fmt.comptimePrint("worker {}", .{i});
+            names[i] = name;
+        }
+        break :names names;
+    };
+
+    for (&self.workers, 0..) |*w, i| {
         w.* = try std.Thread.spawn(.{}, work, .{self});
+        try w.setName(names[i]);
     }
 }
 
 pub fn end(self: *Scheduler) void {
-    self.running = false;
+    self.running.store(false, .unordered);
     self.queue_cond.broadcast();
     for (self.workers) |worker| {
         worker.join();
@@ -116,12 +127,12 @@ pub fn unscheduleClientTasks(self: *Scheduler, client: *http.Client) !void {
 }
 
 fn work(self: *Scheduler) void {
-    while (self.running) {
+    while (self.running.load(.unordered)) {
         self.queue_mu.lock();
-        while (self.queue.buf.items.len == 0 and self.running) {
+        while (self.queue.buf.items.len == 0 and self.running.load(.unordered)) {
             self.queue_cond.wait(&self.queue_mu);
         }
-        if (!self.running) {
+        if (!self.running.load(.unordered)) {
             self.queue_mu.unlock();
             break;
         }
