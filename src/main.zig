@@ -42,7 +42,6 @@ pub fn main() !void {
     router.handleFn("/lorem", lorem);
 
     const thread = try server.listenInNewThread(&router);
-    try thread.setName("server thread");
     thread.detach();
 
     server.stopped_listening.wait();

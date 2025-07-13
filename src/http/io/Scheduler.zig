@@ -79,18 +79,17 @@ pub fn deinit(self: *Scheduler) void {
 pub fn start(self: *Scheduler) !void {
     self.running.store(true, .unordered);
 
-    const names = comptime names: {
-        var names: [worker_count][]const u8 = undefined;
-        for (0..worker_count) |i| {
-            const name = std.fmt.comptimePrint("worker {}", .{i});
-            names[i] = name;
-        }
-        break :names names;
-    };
-
-    for (&self.workers, 0..) |*w, i| {
+    // const names = comptime names: {
+    //     var names: [worker_count][]const u8 = undefined;
+    //     for (0..worker_count) |i| {
+    //         const name = std.fmt.comptimePrint("worker {}", .{i});
+    //         names[i] = name;
+    //     }
+    //     break :names names;
+    // };
+    //
+    for (&self.workers) |*w| {
         w.* = try std.Thread.spawn(.{}, work, .{self});
-        try w.setName(names[i]);
     }
 }
 

@@ -10,44 +10,92 @@ const server_port = 8080;
 
 const index_html = "<h1>Home</h1>";
 
-pub const tests = struct {
-    pub fn testIndex(alloc: Allocator) !void {
-        const ti = try startTest(alloc);
-        defer stopTest(alloc, ti);
-
-        const res = try sendRequest(ti.arena.allocator(), "/");
-        log.info("{}", .{res});
-    }
-};
-
-const TestInfo = struct {
+const Test = struct {
     server: *http.Server,
     router: *http.Router,
     arena: std.heap.ArenaAllocator,
+
+    fn init(alloc: Allocator) !*Test {
+        const ti = try alloc.create(Test);
+        ti.arena = std.heap.ArenaAllocator.init(alloc);
+        ti.server = try createServer(alloc);
+        ti.router = try createRouter(alloc);
+        return ti;
+    }
+
+    fn start(self: *Test) !void {
+        const thread = try self.server.listenInNewThread(self.router);
+        thread.detach();
+    }
+
+    fn deinit(self: *Test, alloc: Allocator) void {
+        self.server.stop() catch |err| {
+            log.err("Server failed to stop: {}", .{err});
+            @panic("Server failed to stop");
+        };
+        self.server.stopped_listening.wait();
+        destroyServer(alloc, self.server);
+
+        alloc.destroy(self.router);
+
+        self.arena.deinit();
+        alloc.destroy(self);
+    }
 };
 
-fn startTest(alloc: Allocator) !*TestInfo {
-    const ti = try alloc.create(TestInfo);
-    ti.arena = std.heap.ArenaAllocator.init(alloc);
-    ti.server = try createServer(alloc);
-    ti.router = try createRouter(alloc);
-    const thread = try ti.server.listenInNewThread(ti.router);
-    try thread.setName("server thread");
-    thread.detach();
-    return ti;
+pub const tests = struct {
+    pub fn testIndex(alloc: Allocator) !void {
+        const ti = try Test.init(alloc);
+        defer ti.deinit(alloc);
+
+        try ti.router.tryHandleFn("/", page.index);
+
+        try ti.start();
+
+        const body = index_html;
+        const expected = try createResponse(
+            ti,
+            .ok,
+            &.{
+                contentLength(body),
+                .{ "Content-Type", "text/html" },
+            },
+            body,
+        );
+
+        const res = try sendRequest(ti.arena.allocator(), "/");
+        try mock.expectEqual(res, expected);
+    }
+};
+
+fn contentLength(comptime body: []const u8) [2][]const u8 {
+    return .{
+        "Content-Length", std.fmt.comptimePrint("{}", .{body.len}),
+    };
 }
 
-fn stopTest(alloc: Allocator, ti: *TestInfo) void {
-    ti.server.stop() catch |err| {
-        log.err("Server failed to stop: {}", .{err});
-        @panic("Server failed to stop");
-    };
-    ti.server.stopped_listening.wait();
-    destroyServer(alloc, ti.server);
+fn createResponse(
+    ti: *Test,
+    status_code: http.Status,
+    comptime headers: []const [2][]const u8,
+    body: []const u8,
+) Allocator.Error!*http.Response {
+    const alloc = ti.arena.allocator();
 
-    destroyRouter(alloc, ti.router);
-    ti.arena.deinit();
-    alloc.destroy(ti);
+    var headers_map = std.StringHashMap([]const u8).init(alloc);
+    for (headers) |header| {
+        try headers_map.put(header[0], header[1]);
+    }
+
+    const res = try alloc.create(http.Response);
+    res.* = http.Response{
+        .protocol = .http11,
+        .arena = alloc,
+        .headers = headers_map,
+        .status_code = status_code,
+        .body = body,
+    };
+    return res;
 }
 
 fn createServer(alloc: Allocator) !*http.Server {
@@ -65,12 +113,7 @@ fn destroyServer(alloc: Allocator, server: *http.Server) void {
 fn createRouter(alloc: Allocator) !*http.Router {
     const router = try alloc.create(http.Router);
     router.* = http.Router.init(alloc);
-    try router.tryHandleFn("/", page.index);
     return router;
-}
-
-fn destroyRouter(alloc: Allocator, router: *http.Router) void {
-    alloc.destroy(router);
 }
 
 const page = struct {

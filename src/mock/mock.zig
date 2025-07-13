@@ -2,8 +2,6 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const http = @import("../http/http.zig");
 const log = std.log.scoped(.mock);
-const utils = @import("utils.zig");
-const Pair = utils.Pair;
 
 pub const request = @import("request.zig");
 
@@ -86,4 +84,114 @@ fn extractTestFunctions(T: type) []const TestFunctionDecl {
 
 fn compileError(comptime msg: []const u8) noreturn {
     @compileError("(mock) " ++ msg);
+}
+
+pub fn Pair(F: type, S: type) type {
+    return struct {
+        const Self = @This();
+
+        first: F,
+        second: S,
+
+        pub fn init(first: F, second: S) Self {
+            return .{
+                .first = first,
+                .second = second,
+            };
+        }
+    };
+}
+
+pub fn expectEqual(a: anytype, b: anytype) !void {
+    const T = @TypeOf(a, b);
+    switch (@typeInfo(T)) {
+        .@"struct" => {
+            switch (T) {
+                http.Request => return expectEqualRequest(&a, &b),
+                http.Request => return expectEqualRequest(&a, &b),
+                else => {},
+            }
+        },
+        .pointer => |p| {
+            if (p.size == .one) {
+                switch (p.child) {
+                    http.Request => return expectEqualRequest(a, b),
+                    http.Response => return expectEqualResponse(a, b),
+                    else => {},
+                }
+            }
+        },
+        else => {},
+    }
+    return std.testing.expectEqual(a, b);
+}
+
+fn expectEqualRequest(a: *const http.Request, b: *const http.Request) !void {
+    errdefer {
+        std.debug.print("---------------------------------------------\n", .{});
+        std.debug.print("Test failed: Unequal requests\n", .{});
+        std.debug.print("Got:\n{}\n-----------Expected:\n{}\n", .{ a, b });
+        std.debug.print("---------------------------------------------\n", .{});
+    }
+
+    if (a.protocol != b.protocol) {
+        return error.UnequalRequests;
+    }
+    if (a.method != b.method) {
+        return error.UnequalRequests;
+    }
+    if (!std.mem.eql(u8, a.url.raw, b.url.raw)) {
+        return error.UnequalRequests;
+    }
+    if (!std.mem.eql(u8, a.body, b.body)) {
+        return error.UnequalRequests;
+    }
+    if (!stringHashMapEql(&a.headers, &b.headers)) {
+        return error.UnequalRequests;
+    }
+}
+
+fn expectEqualResponse(a: *const http.Response, b: *const http.Response) !void {
+    errdefer {
+        std.debug.print("---------------------------------------------\n", .{});
+        std.debug.print("Test failed: Unequal responses\n", .{});
+        std.debug.print("Got:\n{}\n\n-----------\nExpected:\n{}\n\n", .{ a, b });
+        std.debug.print("---------------------------------------------\n", .{});
+    }
+
+    if (a.protocol != b.protocol) {
+        return error.UnequalResponses;
+    }
+    if (a.status_code != b.status_code) {
+        return error.UnequalResponses;
+    }
+    if (!std.mem.eql(u8, a.body, b.body)) {
+        return error.UnequalResponses;
+    }
+    if (!stringHashMapEql(&a.headers, &b.headers)) {
+        return error.UnequalResponses;
+    }
+}
+
+fn stringHashMapEql(
+    a: *const std.StringHashMap([]const u8),
+    b: *const std.StringHashMap([]const u8),
+) bool {
+    if (a.count() != a.count()) {
+        return false;
+    }
+    var a_iter = a.iterator();
+    var b_iter = b.iterator();
+    for (0..a.count()) |_| {
+        const akv = a_iter.next().?;
+        const bkv = b_iter.next().?;
+
+        if (!std.mem.eql(u8, akv.key_ptr.*, bkv.key_ptr.*)) {
+            return false;
+        }
+        if (!std.mem.eql(u8, akv.value_ptr.*, bkv.value_ptr.*)) {
+            return false;
+        }
+    }
+    return true;
 }

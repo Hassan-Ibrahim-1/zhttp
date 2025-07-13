@@ -132,8 +132,6 @@ TOMORROW:
         benchmark:
             figure out how to measure requests / second
 
-
-    pipes
-        on server.stop a pipe signal is sent to epoll_wait
-        Epoll checks for that fd and returns an error.Shutdown
-        which the server handles by just breaking out of the loop
+    testing strat
+        send a request and wait for a response
+        assert that the response is what was expected
