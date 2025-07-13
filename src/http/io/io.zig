@@ -77,7 +77,7 @@ pub const Pipe = struct {
 
     fn init() Error!Pipe {
         const fd = try posix.pipe();
-        _ = try posix.fcntl(fd[0], posix.F.SETFL, linux.IN.NONBLOCK);
+        _ = try posix.fcntl(fd[0], posix.F.SETFL, posix.SOCK.NONBLOCK);
         return .{
             .fd = fd,
         };
@@ -212,6 +212,7 @@ const Epoll = struct {
 
 const KQueue = struct {
     kfd: i32,
+    shutdown_pipe: Pipe,
     ready_list: [ready_list_len]posix.Kevent,
 
     pub const Iterator = struct {
@@ -224,7 +225,8 @@ const KQueue = struct {
 
             const ready = self.ready_list[self.index];
             return switch (ready.udata) {
-                0 => .accept,
+                listener_ptr => .accept,
+                shutdown_ptr => .shutdown,
                 else => |nptr| ret: {
                     const node: *http.ConnectionNode = @alignCast(@as(
                         *http.ConnectionNode,
@@ -240,14 +242,34 @@ const KQueue = struct {
     };
 
     fn init() !KQueue {
+        const kfd = try posix.kqueue();
+        const pipe = try Pipe.init();
+
+        try addPipe(kfd, pipe);
+
         return KQueue{
-            .kfd = try posix.kqueue(),
+            .kfd = kfd,
+            .shutdown_pipe = pipe,
             .ready_list = undefined,
         };
     }
 
+    fn addPipe(kfd: posix.fd_t, pipe: Pipe) !void {
+        _ = try posix.kevent(kfd, &.{
+            .{
+                .ident = @intCast(pipe.fd[0]),
+                .filter = posix.system.EVFILT.READ,
+                .flags = posix.system.EV.ADD,
+                .fflags = 0,
+                .data = 0,
+                .udata = shutdown_ptr,
+            },
+        }, &.{}, null);
+    }
+
     fn deinit(self: *KQueue) void {
         posix.close(self.kfd);
+        self.shutdown_pipe.deinit();
     }
 
     fn addListener(self: *KQueue, listener: posix.socket_t) !void {
@@ -350,5 +372,9 @@ const KQueue = struct {
 
     fn queueChange(self: *KQueue, event: posix.Kevent) !void {
         _ = try posix.kevent(self.kfd, &.{event}, &.{}, null);
+    }
+
+    fn shutdown(self: *KQueue) Pipe.WriteError!void {
+        try self.shutdown_pipe.write("x");
     }
 };
