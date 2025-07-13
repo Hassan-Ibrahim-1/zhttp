@@ -62,10 +62,34 @@ pub const Event = union(enum) {
     accept: void,
     read: *http.ConnectionNode,
     write: *http.ConnectionNode,
+    shutdown: void,
 };
+
+const Pipe = struct {
+    fd: [2]posix.fd_t,
+
+    const Error = posix.PipeError || posix.FcntlError;
+
+    pub fn init() Error!Pipe {
+        const fd = try posix.pipe();
+        _ = try posix.fcntl(fd[0], posix.F.SETFL, linux.IN.NONBLOCK);
+        return .{
+            .fd = fd,
+        };
+    }
+
+    pub fn deinit(self: *Pipe) void {
+        posix.close(self.fd[0]);
+        posix.close(self.fd[1]);
+    }
+};
+
+const listener_ptr: usize = 0;
+const shutdown_ptr: usize = 1;
 
 const Epoll = struct {
     efd: posix.fd_t,
+    shutdown_pipe: Pipe,
     ready_list: [ready_list_len]linux.epoll_event = undefined,
 
     pub const Iterator = struct {
@@ -78,7 +102,8 @@ const Epoll = struct {
 
             const ready = self.ready_list[self.index];
             return switch (ready.data.ptr) {
-                0 => .accept,
+                listener_ptr => .accept,
+                shutdown_ptr => .shutdown,
                 else => |nptr| ret: {
                     const client: *http.ConnectionNode = @ptrFromInt(nptr);
                     if (ready.events & linux.POLL.IN == linux.POLL.IN) {
@@ -90,15 +115,24 @@ const Epoll = struct {
         }
     };
 
-    fn init() posix.EpollCreateError!Epoll {
+    const EpollError = posix.EpollCreateError || Pipe.Error || posix.EpollCtlError;
+
+    fn init() EpollError!Epoll {
         const efd = try posix.epoll_create1(0);
-        return Epoll{
-            .efd = efd,
+        const pipe = try Pipe.init();
+
+        var event = linux.epoll_event{
+            .data = .{ .ptr = shutdown_ptr },
+            .events = linux.POLL.IN,
         };
+        try posix.epoll_ctl(efd, linux.EPOLL.CTL_ADD, pipe.fd[0], &event);
+
+        return Epoll{ .efd = efd, .shutdown_pipe = pipe };
     }
 
     fn deinit(self: *Epoll) void {
         posix.close(self.efd);
+        self.shutdown_pipe.deinit();
     }
 
     fn wait(self: *Epoll) !Iterator {
@@ -113,7 +147,7 @@ const Epoll = struct {
     fn addListener(self: *Epoll, listener: posix.socket_t) !void {
         var event = linux.epoll_event{
             .events = linux.POLL.IN,
-            .data = .{ .ptr = 0 },
+            .data = .{ .ptr = listener_ptr },
         };
         try posix.epoll_ctl(self.efd, linux.EPOLL.CTL_ADD, listener, &event);
     }
@@ -153,6 +187,10 @@ const Epoll = struct {
             node.data.socket,
             &event,
         );
+    }
+
+    fn shutdown(self: *Epoll) void {
+        _ = self; // autofix
     }
 };
 

@@ -187,6 +187,7 @@ pub fn listen(self: *Server, router: *http.Router) !void {
                     log.info("{} deinit in write", .{client.addr});
                     try self.removeClient(node);
                 },
+                .shutdown => break,
             }
         }
     }
