@@ -83,6 +83,7 @@ pub fn listenInNewThread(self: *Server, router: *http.Router) !std.Thread {
                 log.err("server failed: {}", .{err});
             };
             server.stopped_listening.post();
+            std.log.scoped(.hmm).info("server stopped", .{});
         }
     };
     const thread = try std.Thread.spawn(.{}, T.serverListen, .{ self, router });

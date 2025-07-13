@@ -37,11 +37,11 @@ fn startTest(alloc: Allocator) !*TestInfo {
     return ti;
 }
 
-pub fn stopTest(alloc: Allocator, ti: *TestInfo) void {
+fn stopTest(alloc: Allocator, ti: *TestInfo) void {
     ti.server.stop();
-    // this is a little sketchy
     log.info("stopped listening: {}", .{ti.server.stopped_listening.permits});
-    // ti.server.stopped_listening.wait();
+    @breakpoint();
+    ti.server.stopped_listening.wait();
     destroyServer(alloc, ti.server);
 
     destroyRouter(alloc, ti.router);
