@@ -9,7 +9,7 @@ const Response = http.Response;
 const Request = http.Request;
 const Handler = http.Handler;
 
-const log = std.log.scoped(.Router);
+const log = http.debug.log.scoped(.Router);
 
 const Router = @This();
 

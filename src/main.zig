@@ -1,5 +1,5 @@
 const std = @import("std");
-const log = std.log;
+const log = std.log.scoped(.main);
 
 const config = @import("config");
 
@@ -24,7 +24,7 @@ pub fn main() !void {
         server.deinit();
     }
 
-    std.log.info("listening on {}", .{server.address});
+    log.info("listening on {}", .{server.address});
 
     var router = http.Router.init(server.alloc);
     router.handleFn("/", index);

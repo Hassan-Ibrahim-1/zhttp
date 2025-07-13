@@ -1,7 +1,7 @@
 const std = @import("std");
 const net = std.net;
 const posix = std.posix;
-const log = std.log.scoped(.Server);
+const log = http.debug.log.scoped(.Server);
 const Allocator = std.mem.Allocator;
 
 const http = @import("http.zig");

@@ -14,11 +14,11 @@ pub const Response = @import("Response.zig");
 pub const Router = @import("Router.zig");
 pub const Server = @import("Server.zig");
 
-const log = std.log.scoped(.http);
+const log = debug.log;
 
 pub const default_port: u16 = 80;
-
 pub const ConnectionNode = std.DoublyLinkedList(Client).Node;
+pub const logging_enabled = !@import("config").mock;
 
 pub const Method = enum {
     get,
