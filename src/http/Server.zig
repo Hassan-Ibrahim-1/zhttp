@@ -154,7 +154,6 @@ pub fn listen(self: *Server, router: *http.Router) !void {
                                 "failed to read message from {}. reason: {}",
                                 .{ client.addr, err },
                             );
-                            log.info("{} deinit in read", .{client.addr});
                             try self.removeClient(node);
                             clientError(err);
                             continue;
@@ -178,7 +177,6 @@ pub fn listen(self: *Server, router: *http.Router) !void {
                             continue;
                         } else clientError(err);
                     };
-                    log.info("{} deinit in write", .{client.addr});
                     try self.removeClient(node);
                 },
                 .shutdown => {
