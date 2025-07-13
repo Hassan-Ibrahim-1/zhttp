@@ -38,9 +38,10 @@ fn startTest(alloc: Allocator) !*TestInfo {
 }
 
 fn stopTest(alloc: Allocator, ti: *TestInfo) void {
-    ti.server.stop();
-    log.info("stopped listening: {}", .{ti.server.stopped_listening.permits});
-    @breakpoint();
+    ti.server.stop() catch |err| {
+        log.err("Server failed to stop: {}", .{err});
+        @panic("Server failed to stop");
+    };
     ti.server.stopped_listening.wait();
     destroyServer(alloc, ti.server);
 

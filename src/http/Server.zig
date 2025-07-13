@@ -20,7 +20,6 @@ node_pool: std.heap.MemoryPool(http.ConnectionNode),
 
 event_loop: io.EventLoop,
 event_loop_mu: std.Thread.Mutex,
-running: std.atomic.Value(bool),
 
 /// used for signalling to listenInNewThread that the server is ready to listen
 ready_to_listen: std.Thread.Semaphore,
@@ -43,7 +42,6 @@ pub fn init(alloc: Allocator, host: []const u8, port: u16) !Server {
         .ready_to_listen = .{},
         .stopped_listening = .{},
         .clients = .{},
-        .running = .init(false),
     };
 }
 
@@ -83,7 +81,6 @@ pub fn listenInNewThread(self: *Server, router: *http.Router) !std.Thread {
                 log.err("server failed: {}", .{err});
             };
             server.stopped_listening.post();
-            std.log.scoped(.hmm).info("server stopped", .{});
         }
     };
     const thread = try std.Thread.spawn(.{}, T.serverListen, .{ self, router });
@@ -118,12 +115,9 @@ pub fn listen(self: *Server, router: *http.Router) !void {
 
     defer self.clearClients();
 
-    self.running.store(true, .unordered);
-
     self.ready_to_listen.post();
 
-    while (self.running.load(.unordered)) {
-        log.info("running: {}", .{self.running.load(.unordered)});
+    event_loop: while (true) {
         var iter = try self.event_loop.wait();
         while (iter.next()) |ev| {
             switch (ev) {
@@ -187,14 +181,17 @@ pub fn listen(self: *Server, router: *http.Router) !void {
                     log.info("{} deinit in write", .{client.addr});
                     try self.removeClient(node);
                 },
-                .shutdown => break,
+                .shutdown => {
+                    log.info("SHUTDOWN", .{});
+                    break :event_loop;
+                },
             }
         }
     }
 }
 
-pub fn stop(self: *Server) void {
-    self.running.store(false, .unordered);
+pub fn stop(self: *Server) !void {
+    try self.event_loop.shutdown();
 }
 
 fn dispatchClient(

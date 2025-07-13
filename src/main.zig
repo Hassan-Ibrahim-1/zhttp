@@ -57,7 +57,7 @@ fn index(res: *http.Response, req: *const http.Request) !void {
     res.status_code = .ok;
     try res.headers.put("Content-Type", "text/html");
     try http.serveFile(res, "res/index.html");
-    server.stop();
+    try server.stop();
 }
 
 fn submitForm(res: *http.Response, req: *const http.Request) !void {

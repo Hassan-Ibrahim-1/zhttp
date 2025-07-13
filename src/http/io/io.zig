@@ -45,6 +45,10 @@ pub const EventLoop = struct {
 
         try self.impl.setIoMode(node, mode);
     }
+
+    pub fn shutdown(self: *EventLoop) Pipe.WriteError!void {
+        try self.impl.shutdown();
+    }
 };
 
 pub const Mode = enum {
@@ -65,12 +69,13 @@ pub const Event = union(enum) {
     shutdown: void,
 };
 
-const Pipe = struct {
+pub const Pipe = struct {
+    /// first fd is the read pipe and the second fd is the write pipe
     fd: [2]posix.fd_t,
 
     const Error = posix.PipeError || posix.FcntlError;
 
-    pub fn init() Error!Pipe {
+    fn init() Error!Pipe {
         const fd = try posix.pipe();
         _ = try posix.fcntl(fd[0], posix.F.SETFL, linux.IN.NONBLOCK);
         return .{
@@ -78,9 +83,20 @@ const Pipe = struct {
         };
     }
 
-    pub fn deinit(self: *Pipe) void {
+    fn deinit(self: *Pipe) void {
         posix.close(self.fd[0]);
         posix.close(self.fd[1]);
+    }
+
+    pub const WriteError = error{Closed} || posix.WriteError;
+
+    fn write(self: *Pipe, bytes: []const u8) WriteError!void {
+        var pos: usize = 0;
+        while (pos < bytes.len) {
+            const n = try posix.write(self.fd[1], bytes[pos..]);
+            if (n == 0) return error.Closed;
+            pos += n;
+        }
     }
 };
 
@@ -189,8 +205,8 @@ const Epoll = struct {
         );
     }
 
-    fn shutdown(self: *Epoll) void {
-        _ = self; // autofix
+    fn shutdown(self: *Epoll) Pipe.WriteError!void {
+        try self.shutdown_pipe.write("x");
     }
 };
 
