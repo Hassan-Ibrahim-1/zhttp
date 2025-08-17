@@ -7,8 +7,6 @@ pub const http = @import("http/http.zig");
 const http_mock = @import("http/http_mock.zig");
 const mock = @import("mock/mock.zig");
 
-var server: http.Server = undefined;
-
 pub fn main() !void {
     var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer std.debug.assert(gpa.deinit() == .ok);
@@ -18,7 +16,7 @@ pub fn main() !void {
         return mock.run(http_mock.tests);
     }
 
-    server = try http.Server.init(alloc, "127.0.0.1", 8080);
+    var server = try http.Server.init(alloc, "127.0.0.1", 8080);
     defer {
         server.close();
         server.deinit();
