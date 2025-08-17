@@ -173,9 +173,10 @@ pub fn listen(self: *Server, router: *http.Router) !void {
                 .write => |node| {
                     const client = &node.data;
                     client.writer.write() catch |err| {
-                        if (err == error.WouldBlock) {
-                            continue;
-                        } else clientError(err);
+                        if (err == error.WouldBlock)
+                            continue
+                        else
+                            clientError(err);
                     };
                     try self.removeClient(node);
                 },
